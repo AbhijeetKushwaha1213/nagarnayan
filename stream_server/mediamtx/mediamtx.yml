@@ -19,10 +19,11 @@ writeTimeout: 10s
 rtsp: yes
 rtspAddress: :8554
 
-# ---- HLS (optional) — browser-friendly playback ----
+# ---- HLS (HTTP Live Streaming) — browser & player playback ----
 hls: yes
 hlsAddress: :8888
-hlsAlwaysRemux: no
+hlsAlwaysRemux: yes
+hlsAllowOrigin: '*'
 
 # ---- WebRTC (optional) — low-latency browser playback ----
 webrtc: yes
