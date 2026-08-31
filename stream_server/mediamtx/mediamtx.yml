@@ -1,0 +1,49 @@
+# ============================================================
+# MediaMTX configuration — Nagar Nayan stream server
+# Docs: https://github.com/bluenviron/mediamtx
+#
+# Kept intentionally minimal. RTSP (8554), HLS (8888) and
+# WebRTC (8889) are enabled by MediaMTX defaults; we only
+# override logging and declare a catch-all path so any
+# publisher (our FFmpeg streamer) can push to any path.
+# ============================================================
+
+logLevel: info
+logDestinations: [stdout]
+
+# Read timeout for published/read streams.
+readTimeout: 10s
+writeTimeout: 10s
+
+# ---- RTSP (primary output) ----
+rtsp: yes
+rtspAddress: :8554
+# Allow both TCP and UDP so any RTSP client can connect.
+rtspTransports: [tcp, udp]
+
+# ---- HLS (optional) — browser-friendly playback ----
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: no
+
+# ---- WebRTC (optional) — low-latency browser playback ----
+webrtc: yes
+webrtcAddress: :8889
+
+# ============================================================
+# Paths
+# ------------------------------------------------------------
+# `all_others` is a catch-all: any path not explicitly listed
+# is accepted. This is what makes the setup extensible — new
+# streams like bus/NN-001/front simply work with no config
+# change. To lock things down later, replace this with named
+# paths (see the commented example below).
+# ============================================================
+paths:
+  all_others:
+
+  # ---- Example: explicit named paths for future multi-bus setups ----
+  # bus/front:
+  # bus/NN-001/front:
+  # bus/NN-001/rear:
+  # bus/NN-002/front:

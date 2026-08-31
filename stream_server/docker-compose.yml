@@ -1,0 +1,60 @@
+# ============================================================
+# Nagar Nayan — Video Stream Simulation Server
+# Replays recorded bus-camera videos as continuous live RTSP.
+#
+#   FFmpeg Streamer  ──RTSP publish──▶  MediaMTX  ──RTSP──▶  Consumers
+#
+# Start everything:   docker compose up --build
+# Consume the stream: rtsp://localhost:8554/bus/front
+# ============================================================
+
+services:
+  # ----------------------------------------------------------
+  # MediaMTX — the media server. Accepts the published stream
+  # and re-serves it over RTSP (+ HLS / WebRTC).
+  # ----------------------------------------------------------
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3
+    container_name: nn-mediamtx
+    restart: unless-stopped
+    ports:
+      - "${RTSP_PORT:-8554}:8554"          # RTSP  (primary)
+      - "${HLS_PORT:-8888}:8888"           # HLS   (optional)
+      - "${WEBRTC_PORT:-8889}:8889"        # WebRTC signalling (optional)
+      - "${WEBRTC_ICE_PORT:-8189}:8189/udp" # WebRTC ICE/UDP    (optional)
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - streamnet
+
+  # ----------------------------------------------------------
+  # Streamer — FFmpeg reads the recorded MP4 and publishes it
+  # to MediaMTX in real time, looping forever.
+  # ----------------------------------------------------------
+  streamer:
+    build: ./streamer
+    container_name: nn-streamer
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+    environment:
+      # Where to publish
+      MEDIAMTX_HOST: mediamtx
+      MEDIAMTX_RTSP_PORT: 8554
+      RTSP_TRANSPORT: ${RTSP_TRANSPORT:-tcp}
+      # What to publish
+      VIDEO_FILE: ${VIDEO_FILE:-bus_front_01.mp4}
+      STREAM_PATH: ${STREAM_PATH:-bus/front}
+      # How to publish
+      STREAM_COPY: ${STREAM_COPY:-false}
+      TARGET_FPS: ${TARGET_FPS:-25}
+      GOP: ${GOP:-50}
+      RETRY_DELAY: ${RETRY_DELAY:-3}
+    volumes:
+      - ./videos:/videos:ro
+    networks:
+      - streamnet
+
+networks:
+  streamnet:
+    driver: bridge
