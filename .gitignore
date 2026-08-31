@@ -29,3 +29,11 @@ yarn-error.log*
 # TS build cache
 node_modules/.tmp
 *.tsbuildinfo
+.vite
+
+# Temporary certs
+*.crt
+*.key
+stream_server/auto.crt
+stream_server/auto.key
+
