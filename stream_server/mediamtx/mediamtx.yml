@@ -18,8 +18,6 @@ writeTimeout: 10s
 # ---- RTSP (primary output) ----
 rtsp: yes
 rtspAddress: :8554
-# Allow both TCP and UDP so any RTSP client can connect.
-rtspTransports: [tcp, udp]
 
 # ---- HLS (optional) — browser-friendly playback ----
 hls: yes
