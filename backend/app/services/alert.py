@@ -325,6 +325,7 @@ class AlertService:
         new_alert = await self.repo.create(new_alert)
         await self._session.commit()
         await self._session.refresh(new_alert)
+        await self._publisher.publish_alert_created(new_alert)
         return new_alert
 
     async def get_alert(self, alert_id: uuid.UUID) -> Alert:

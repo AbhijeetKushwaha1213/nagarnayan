@@ -57,12 +57,20 @@ class ConnectionManager:
           - Dead or disconnected sockets are safely collected and pruned.
           - Delivery failure for one client never interrupts broadcast to remaining clients.
         """
+        if not isinstance(message, dict):
+            logger.error("Cannot broadcast non-dict message: %r", message)
+            return
+
         if not self._active_connections:
             logger.debug("No active WebSocket connections; broadcast skipped.")
             return
 
-        async with self._lock:
-            snapshot = list(self._active_connections)
+        try:
+            async with self._lock:
+                snapshot = list(self._active_connections)
+        except Exception as exc:
+            logger.error("Failed to acquire connection lock for broadcast: %s", exc)
+            return
 
         dead_connections: list[WebSocket] = []
 
@@ -86,14 +94,17 @@ class ConnectionManager:
                 dead_connections.append(socket)
 
         if dead_connections:
-            async with self._lock:
-                for dead in dead_connections:
-                    self._active_connections.discard(dead)
-            logger.debug(
-                "Pruned %d dead WebSocket client(s). Remaining: %d",
-                len(dead_connections),
-                self.active_count,
-            )
+            try:
+                async with self._lock:
+                    for dead in dead_connections:
+                        self._active_connections.discard(dead)
+                logger.debug(
+                    "Pruned %d dead WebSocket client(s). Remaining: %d",
+                    len(dead_connections),
+                    self.active_count,
+                )
+            except Exception as exc:
+                logger.error("Failed to prune dead connections: %s", exc)
 
     async def send_personal(self, websocket: WebSocket, message: dict[str, Any]) -> None:
         """Send JSON message directly to a specific connected client."""

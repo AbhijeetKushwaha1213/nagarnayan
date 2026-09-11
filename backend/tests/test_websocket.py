@@ -100,6 +100,7 @@ def make_test_alert(
         message="Persistent pothole detected by bus-camera observations. Confidence: 0.86",
         extra_metadata={"event_type": event.event_type.value},
         event=event,
+        triggered_at=now,
         created_at=now,
         updated_at=now,
     )
@@ -161,6 +162,43 @@ class TestConnectionManager:
         assert failing_ws not in manager._active_connections
         assert healthy_ws in manager._active_connections
 
+    async def test_manager_broadcast_ignores_malformed_payload(self) -> None:
+        """P. Malformed/non-dict payload cannot crash the broadcast manager."""
+        manager = ConnectionManager()
+        ws = AsyncMock()
+        await manager.connect(ws)
+
+        # Non-dict inputs should be gracefully rejected without throwing
+        await manager.broadcast("not-a-dict")  # type: ignore[arg-type]
+        await manager.broadcast(None)          # type: ignore[arg-type]
+        await manager.broadcast([1, 2, 3])     # type: ignore[arg-type]
+
+        # Valid broadcast still works
+        valid_msg = {"type": "event.created", "data": {"id": "abc"}}
+        await manager.broadcast(valid_msg)
+        ws.send_json.assert_called_once_with(valid_msg)
+
+    async def test_concurrent_client_operations_remain_safe(self) -> None:
+        """Q. Concurrent client connects, broadcasts, and disconnects remain safe."""
+        manager = ConnectionManager()
+        clients = [AsyncMock() for _ in range(10)]
+
+        # Concurrently connect 10 clients
+        await asyncio.gather(*(manager.connect(ws) for ws in clients))
+        assert manager.active_count == 10
+
+        # Concurrently broadcast 5 messages
+        messages = [{"type": "event.updated", "data": {"seq": i}} for i in range(5)]
+        await asyncio.gather(*(manager.broadcast(m) for m in messages))
+
+        # Each client received all 5 messages
+        for ws in clients:
+            assert ws.send_json.call_count == 5
+
+        # Concurrently disconnect 5 clients
+        await asyncio.gather(*(manager.disconnect(ws) for ws in clients[:5]))
+        assert manager.active_count == 5
+
 
 # ── Payload & Envelope Serialization Tests ────────────────────────────────────
 
@@ -213,6 +251,8 @@ class TestMessageContracts:
         assert parsed["title"] == alert.title
         assert parsed["message"] == alert.message
         assert "created_at" in parsed
+        assert "triggered_at" in parsed
+        assert parsed["triggered_at"] is not None
 
     def test_13_coordinate_less_event_sends_null_coordinates(self) -> None:
         """13. Coordinate-less Event sends null coordinates, never fabricating locations."""
@@ -268,6 +308,16 @@ class TestWebSocketEndpoint:
             resp = ws.receive_json()
             assert resp["type"] == "system.pong"
             assert resp["data"]["status"] == "alive"
+
+    def test_2_client_connection_acknowledgement(self) -> None:
+        """B. Connection acknowledgement message works on client handshake."""
+        client = TestClient(app)
+        with client.websocket_connect("/api/v1/ws") as ws:
+            ws.send_text("connect")
+            resp = ws.receive_json()
+            assert resp["type"] == "system.connected"
+            assert resp["data"]["status"] == "connected"
+            assert resp["data"]["active_clients"] >= 1
 
     def test_3_client_receives_event_created(self) -> None:
         """3. Connected client receives event.created message."""
@@ -447,3 +497,131 @@ class TestPipelineWebSocketIntegration:
             assert msg4["data"]["id"] == str(alert.id)
             assert msg4["data"]["status"] == "RESOLVED"
             assert msg4["data"]["resolved_at"] is not None
+
+    @pytest.mark.asyncio
+    async def test_18_database_failure_does_not_produce_realtime_event(self) -> None:
+        """N. Database commit failure never emits a successful realtime WebSocket event."""
+        session = AsyncMock()
+        session.commit.side_effect = RuntimeError("Database write failure!")
+
+        mock_publisher = MagicMock()
+        mock_publisher.publish_event_created = AsyncMock()
+        mock_publisher.publish_alert_created = AsyncMock()
+
+        bus_id = uuid.uuid4()
+        cam_id = uuid.uuid4()
+
+        service = DetectionService(session, publisher=mock_publisher)
+        service._bus_repo.get_by_id = AsyncMock(return_value=Bus(id=bus_id, bus_number="B1"))
+        service._camera_repo.get_by_id = AsyncMock(
+            return_value=Camera(id=cam_id, bus_id=bus_id, camera_type=CameraType.front)
+        )
+        service.repo.create = AsyncMock(side_effect=lambda d: d)
+        event = make_test_event()
+        event._is_new = True
+        service._correlation_service.correlate_and_link = AsyncMock(return_value=event)
+
+        alert = make_test_alert(event, status=AlertStatus.NEW)
+        alert._is_new = True
+        service._alert_service.process_event_for_alert = AsyncMock(return_value=alert)
+
+        payload = DetectionCreate(
+            bus_id=bus_id,
+            camera_id=cam_id,
+            detection_type="POTHOLE",
+            confidence=0.88,
+            latitude=12.9716,
+            longitude=77.5946,
+            detected_at=datetime.now(timezone.utc),
+        )
+
+        with pytest.raises(RuntimeError) as exc:
+            await service.create_detection(payload)
+        assert "Database write failure!" in str(exc.value)
+
+        # Neither event nor alert was published because commit failed
+        mock_publisher.publish_event_created.assert_not_called()
+        mock_publisher.publish_alert_created.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_19_alert_escalation_emits_alert_updated(self) -> None:
+        """F & 17. Detection that escalates an existing alert publishes alert.updated."""
+        session = AsyncMock()
+        mock_publisher = MagicMock()
+        mock_publisher.publish_event_created = AsyncMock()
+        mock_publisher.publish_event_updated = AsyncMock()
+        mock_publisher.publish_alert_created = AsyncMock()
+        mock_publisher.publish_alert_updated = AsyncMock()
+
+        bus_id = uuid.uuid4()
+        cam_id = uuid.uuid4()
+        event_id = uuid.uuid4()
+
+        service = DetectionService(session, publisher=mock_publisher)
+        service._bus_repo.get_by_id = AsyncMock(return_value=Bus(id=bus_id, bus_number="B1"))
+        service._camera_repo.get_by_id = AsyncMock(
+            return_value=Camera(id=cam_id, bus_id=bus_id, camera_type=CameraType.front)
+        )
+        service.repo.create = AsyncMock(side_effect=lambda d: d)
+
+        # Correlated event updated
+        event = make_test_event(event_id=event_id, severity=EventSeverity.CRITICAL)
+        event._is_new = False
+        service._correlation_service.correlate_and_link = AsyncMock(return_value=event)
+
+        # Alert escalated
+        escalated_alert = make_test_alert(event, status=AlertStatus.ACTIVE)
+        escalated_alert.severity = EventSeverity.CRITICAL
+        escalated_alert._is_new = False
+        escalated_alert._is_escalated = True
+        service._alert_service.process_event_for_alert = AsyncMock(return_value=escalated_alert)
+
+        payload = DetectionCreate(
+            bus_id=bus_id,
+            camera_id=cam_id,
+            detection_type="POTHOLE",
+            confidence=0.95,
+            latitude=12.9716,
+            longitude=77.5946,
+            detected_at=datetime.now(timezone.utc),
+        )
+
+        await service.create_detection(payload)
+
+        # event.updated was published
+        mock_publisher.publish_event_updated.assert_called_once_with(event)
+        # alert.updated was published due to escalation
+        mock_publisher.publish_alert_updated.assert_called_once_with(escalated_alert)
+        # alert.created was NOT published
+        mock_publisher.publish_alert_created.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_20_manual_alert_creation_emits_alert_created(self) -> None:
+        """E. Manual alert creation publishes alert.created post-commit."""
+        from app.schemas.alert import AlertManualCreate
+
+        session = AsyncMock()
+        mock_publisher = MagicMock()
+        mock_publisher.publish_alert_created = AsyncMock()
+
+        event = make_test_event()
+        alert_service = AlertService(session, publisher=mock_publisher)
+        alert_service.repo.find_active_alert_by_event = AsyncMock(return_value=None)
+        alert_service.repo.create = AsyncMock(side_effect=lambda a: a)
+
+        # Mock event lookup
+        mock_event_repo = MagicMock()
+        mock_event_repo.get_by_id = AsyncMock(return_value=event)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("app.repositories.event.EventRepository.get_by_id", mock_event_repo.get_by_id)
+            payload = AlertManualCreate(
+                event_id=event.id,
+                title="Manual Dispatch",
+                message="Urgent action needed",
+                severity=EventSeverity.CRITICAL,
+            )
+            created = await alert_service.create_manual_alert(payload)
+
+        assert created is not None
+        assert created.title == "Manual Dispatch"
+        mock_publisher.publish_alert_created.assert_called_once_with(created)

@@ -48,6 +48,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "data": {"status": "alive"},
                     }
                 )
+            elif stripped in ("connect", "hello", '{"type":"connect"}', '{"type": "connect"}'):
+                await websocket.send_json(
+                    {
+                        "type": "system.connected",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "data": {
+                            "status": "connected",
+                            "active_clients": manager.active_count,
+                        },
+                    }
+                )
     except WebSocketDisconnect:
         await manager.disconnect(websocket)
         logger.debug("WebSocket client disconnected normally.")

@@ -63,12 +63,11 @@ class TestHealthEndpoint:
         assert "status" in db
         assert db["status"] in ("healthy", "unhealthy", "not_configured")
 
-    def test_health_no_db_configured(self, client: TestClient) -> None:
+    def test_health_no_db_configured(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         """When DATABASE_URL is empty, overall status is still 'healthy'."""
-        import os
+        from app.core.config import settings
 
-        if os.environ.get("DATABASE_URL"):
-            pytest.skip("DATABASE_URL is set — DB tests should check differently")
+        monkeypatch.setattr(settings, "DATABASE_URL", "")
         response = client.get("/api/v1/health")
         body = response.json()
         assert body["status"] == "healthy"

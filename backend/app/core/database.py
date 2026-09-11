@@ -43,8 +43,11 @@ def _get_engine() -> AsyncEngine | None:
     """Return the shared async engine, creating it once on first call."""
     global _engine
     if _engine is None and settings.DATABASE_URL:
+        url = settings.DATABASE_URL
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         _engine = create_async_engine(
-            settings.DATABASE_URL,
+            url,
             echo=False,
             pool_pre_ping=True,   # verify connections before use
             pool_size=5,
@@ -63,7 +66,6 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession] | None:
             _session_factory = async_sessionmaker(
                 engine,
                 expire_on_commit=False,
-                class_=AsyncSession,
             )
     return _session_factory
 
@@ -95,7 +97,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
             raise
 
 
-# ── Health Probe ─────────────────────────────────────────────────────────────
+# ── Health Check Probe ─────────────────────────────────────────────────────────
 
 
 async def check_db_connection() -> tuple[str, str]:
@@ -110,14 +112,14 @@ async def check_db_connection() -> tuple[str, str]:
     if not settings.DATABASE_URL:
         return "not_configured", "DATABASE_URL not set"
 
-    engine = _get_engine()
-    if engine is None:
-        return "not_configured", "Engine not initialised"
-
     try:
+        engine = _get_engine()
+        if engine is None:
+            return "not_configured", "Engine not initialised"
+
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return "healthy", "OK"
     except Exception as exc:
         logger.warning("Database health check failed: %s", exc)
-        return "unhealthy", str(exc)
+        return "unhealthy", type(exc).__name__

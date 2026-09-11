@@ -179,10 +179,14 @@ class DetectionService:
 
         # Automatic Alert synthesis when the Event requires municipal attention
         created_alert = None
+        updated_alert = None
         if correlated_event is not None:
             alert_result = await self._alert_service.process_event_for_alert(correlated_event)
-            if alert_result is not None and getattr(alert_result, "_is_new", False):
-                created_alert = alert_result
+            if alert_result is not None:
+                if getattr(alert_result, "_is_new", False):
+                    created_alert = alert_result
+                elif getattr(alert_result, "_is_escalated", False):
+                    updated_alert = alert_result
 
         # Commit database transaction first (Step 8: strict transaction rule)
         await self._session.commit()
@@ -196,8 +200,10 @@ class DetectionService:
             else:
                 await self._publisher.publish_event_updated(correlated_event)
 
-        # 2. Publish Alert notification second (if a new alert was synthesized)
+        # 2. Publish Alert notification second (if a new alert was synthesized or escalated)
         if created_alert is not None:
             await self._publisher.publish_alert_created(created_alert)
+        elif updated_alert is not None:
+            await self._publisher.publish_alert_updated(updated_alert)
 
         return detection

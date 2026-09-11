@@ -572,7 +572,18 @@ WS /api/v1/ws
 - **Error Isolation**: Slow or abruptly disconnected clients are safely timed out (2.0s bounded send) and pruned without interrupting broadcasts to remaining clients.
 - **Transaction Consistency**: Events and alerts are strictly broadcast **post-commit**. Database operations will never roll back due to a WebSocket network glitch, and phantom broadcasts are impossible.
 - **Logical Ordering**: For newly synthesized actionable municipal issues, `event.created` is guaranteed to broadcast before `alert.created`.
-- **Keepalive / Heartbeat**: Clients may send `"ping"` or `{"type": "ping"}`; the server responds with:
+- **Connection Acknowledgement & Keepalive**: Upon connection or sending `"connect"` / `"hello"`, the server responds with:
+  ```json
+  {
+    "type": "system.connected",
+    "timestamp": "2026-09-09T16:40:00.000000Z",
+    "data": {
+      "status": "connected",
+      "active_clients": 1
+    }
+  }
+  ```
+  Clients may send `"ping"` or `{"type": "ping"}`; the server responds with:
   ```json
   {
     "type": "system.pong",
@@ -664,9 +675,10 @@ Broadcast when an actionable municipal `Alert` is synthesized from an Event.
     "status": "NEW",
     "title": "High Priority Pothole Detected",
     "message": "Persistent pothole detected by bus-camera observations. Confidence: 0.88",
-    "created_at": "2026-09-09T16:40:00.200000Z",
+    "triggered_at": "2026-09-09T16:40:00.200000Z",
     "acknowledged_at": null,
     "resolved_at": null,
+    "created_at": "2026-09-09T16:40:00.200000Z",
     "metadata": {
       "event_type": "POTHOLE",
       "event_severity": "HIGH"
@@ -676,7 +688,7 @@ Broadcast when an actionable municipal `Alert` is synthesized from an Event.
 ```
 
 #### 4. `alert.updated`
-Broadcast when an `Alert` undergoes a lifecycle state transition (e.g., `NEW` → `ACKNOWLEDGED`, `ACKNOWLEDGED` → `RESOLVED`).
+Broadcast when an `Alert` undergoes a lifecycle state transition (e.g., `NEW` → `ACKNOWLEDGED`, `ACKNOWLEDGED` → `RESOLVED`, or is escalated).
 
 ```json
 {
@@ -690,9 +702,10 @@ Broadcast when an `Alert` undergoes a lifecycle state transition (e.g., `NEW` �
     "status": "ACKNOWLEDGED",
     "title": "High Priority Pothole Detected",
     "message": "Persistent pothole detected by bus-camera observations. Confidence: 0.88",
-    "created_at": "2026-09-09T16:40:00.200000Z",
+    "triggered_at": "2026-09-09T16:40:00.200000Z",
     "acknowledged_at": "2026-09-09T16:45:00.000000Z",
     "resolved_at": null,
+    "created_at": "2026-09-09T16:40:00.200000Z",
     "metadata": {
       "event_type": "POTHOLE"
     }
