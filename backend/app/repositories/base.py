@@ -44,9 +44,10 @@ class BaseRepository(Generic[ModelT]):
         await self.session.refresh(obj)
         return obj
 
-    async def update(self, obj: ModelT, data: dict) -> ModelT:
-        for key, value in data.items():
-            setattr(obj, key, value)
+    async def update(self, obj: ModelT, data: dict | None = None) -> ModelT:
+        if data:
+            for key, value in data.items():
+                setattr(obj, key, value)
         await self.session.flush()
         await self.session.refresh(obj)
         return obj

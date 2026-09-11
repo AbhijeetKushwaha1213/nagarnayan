@@ -20,6 +20,7 @@ from app.backend.mapping import build_frame_reference, map_class_to_detection_ty
 from app.backend.schemas import BackendDetectionPayload
 from app.core.config import settings
 from app.detection.schemas import ValidatedDetection
+from app.telemetry.demo_telemetry import DemoTelemetryProvider
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +129,15 @@ class DetectionSender:
             "bounding_box": bbox_dict,
         }
 
-        # Zero fabricated GPS coordinates: latitude and longitude are strictly None
+        # Resolve GPS telemetry: In production returns None, None. In demo mode returns explicit demo telemetry.
+        lat, lon, demo_meta = DemoTelemetryProvider.resolve_telemetry(
+            bus_id=bus_id,
+            camera_id=camera_id,
+            stream_id=stream_id,
+        )
+        if demo_meta:
+            metadata.update(demo_meta)
+
         return BackendDetectionPayload(
             bus_id=bus_id,
             camera_id=camera_id,
@@ -138,8 +147,8 @@ class DetectionSender:
             detected_at=iso_detected_at,
             frame_reference=frame_ref,
             metadata=metadata,
-            latitude=None,
-            longitude=None,
+            latitude=lat,
+            longitude=lon,
         )
 
     def should_suppress_duplicate(

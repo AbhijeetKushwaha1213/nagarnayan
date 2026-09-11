@@ -236,6 +236,24 @@ class Settings(BaseSettings):
         description="Camera nominal longitude for geo-tagging",
     )
 
+    # ── Phase 9: Controlled Demo Telemetry Configuration ─────────────────────
+    DEMO_TELEMETRY_ENABLED: bool = Field(
+        default=False,
+        description="Explicitly enable simulated GPS coordinates for demo video streams with no onboard GPS",
+    )
+    DEMO_TELEMETRY_LATITUDE: float = Field(
+        default=28.6139,
+        description="Predefined demo simulated GPS latitude (e.g. Connaught Place, New Delhi)",
+    )
+    DEMO_TELEMETRY_LONGITUDE: float = Field(
+        default=77.2090,
+        description="Predefined demo simulated GPS longitude (e.g. Connaught Place, New Delhi)",
+    )
+    DEMO_TELEMETRY_ROUTE_ID: str = Field(
+        default="ROUTE-DELHI-01",
+        description="Predefined demo route identifier for simulated telemetry",
+    )
+
     FRAME_REFERENCE_PREFIX: str = Field(
         default="http://localhost:9000/frames",
         description="Frame reference URL prefix",
