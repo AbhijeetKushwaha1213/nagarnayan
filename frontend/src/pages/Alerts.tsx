@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { PageContainer } from '@/components/layout/Page';
 import { getIcon } from '@/components/ui/icons';
 import type { Alert, AlertSeverity, AlertStatus } from '@/types/backend';
+import { filterAlerts } from '@/utils/filterUtils';
 
 const SEVERITY_OPTIONS: ('ALL' | AlertSeverity)[] = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 const STATUS_OPTIONS: ('ALL' | AlertStatus)[] = [
@@ -57,22 +58,16 @@ export function Alerts() {
     fetchAlerts();
   }, [selectedSeverity, selectedStatus]);
 
-  // Merge REST alerts with realtime WebSocket alerts using stable identity
+  // Merge REST alerts with realtime WebSocket alerts using stable identity and pure filtering
   const displayAlerts = useMemo(() => {
     const map = new Map<string, Alert>();
     for (const a of alerts) map.set(a.id, a);
     for (const a of realtimeAlerts) {
-      const matchesSeverity = selectedSeverity === 'ALL' || a.severity === selectedSeverity;
-      const matchesStatus = selectedStatus === 'ALL' || a.status === selectedStatus;
-      if (matchesSeverity && matchesStatus) {
-        map.set(a.id, a);
-      }
+      map.set(a.id, a);
     }
-
-    return Array.from(map.values()).sort((a, b) => {
-      const tA = a.triggered_at ? new Date(a.triggered_at).getTime() : new Date(a.created_at).getTime();
-      const tB = b.triggered_at ? new Date(b.triggered_at).getTime() : new Date(b.created_at).getTime();
-      return tB - tA;
+    return filterAlerts(Array.from(map.values()), {
+      severity: selectedSeverity,
+      status: selectedStatus,
     });
   }, [alerts, realtimeAlerts, selectedSeverity, selectedStatus]);
 

@@ -11,6 +11,7 @@ import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { GeoJSONEventFeature, GeoJSONFeatureCollection } from '@/types/backend';
+import { extractValidGeoPoints } from '@/utils/geoUtils';
 
 interface EventGeoJsonMapProps {
   geoJson?: GeoJSONFeatureCollection | null;
@@ -116,27 +117,7 @@ export function EventGeoJsonMap({
 }: EventGeoJsonMapProps) {
   // Filter features with valid GeoJSON point coordinates
   // Strictly validate [longitude, latitude] ordering and omit invalid/missing telemetry
-  const validFeatures = useMemo(() => {
-    if (!geoJson?.features || !Array.isArray(geoJson.features)) {
-      return [];
-    }
-    return geoJson.features.filter((f) => {
-      if (f.geometry?.type !== 'Point') return false;
-      const coords = f.geometry.coordinates;
-      if (!Array.isArray(coords) || coords.length < 2) return false;
-      const [lng, lat] = coords;
-      return (
-        typeof lng === 'number' &&
-        !isNaN(lng) &&
-        typeof lat === 'number' &&
-        !isNaN(lat) &&
-        lat >= -90 &&
-        lat <= 90 &&
-        lng >= -180 &&
-        lng <= 180
-      );
-    });
-  }, [geoJson]);
+  const validFeatures = useMemo(() => extractValidGeoPoints(geoJson), [geoJson]);
 
   // Determine initial center: provided prop, or first valid feature, or neutral world
   const initialCenter: [number, number] = useMemo(() => {

@@ -12,6 +12,7 @@ import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PageContainer } from '@/components/layout/Page';
 import { getIcon } from '@/components/ui/icons';
+import { filterEvents } from '@/utils/filterUtils';
 import type { EventSeverity, EventStatus, UrbanEvent } from '@/types/backend';
 
 const SEVERITY_OPTIONS: ('ALL' | EventSeverity)[] = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
@@ -75,36 +76,22 @@ export function EventsPage() {
   }, [selectedSeverity, selectedStatus, selectedType]);
 
   // Combine REST events with real-time updates safely using ID identity
-  const displayEvents = useMemo(() => {
+  const mergedEvents = useMemo(() => {
     const map = new Map<string, UrbanEvent>();
     for (const e of events) map.set(e.id, e);
-    for (const e of realtimeEvents) {
-      // Check if matches active filters
-      const matchesSeverity = selectedSeverity === 'ALL' || e.severity === selectedSeverity;
-      const matchesStatus = selectedStatus === 'ALL' || e.status === selectedStatus;
-      const matchesType = selectedType === 'ALL' || e.event_type === selectedType;
+    for (const e of realtimeEvents) map.set(e.id, e);
+    return Array.from(map.values());
+  }, [events, realtimeEvents]);
 
-      if (matchesSeverity && matchesStatus && matchesType) {
-        map.set(e.id, e);
-      }
-    }
-
-    let list = Array.from(map.values());
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(
-        (e) =>
-          e.event_type.toLowerCase().includes(q) ||
-          e.id.toLowerCase().includes(q) ||
-          (e.bus_id && e.bus_id.toLowerCase().includes(q)),
-      );
-    }
-
-    return list.sort(
-      (a, b) => new Date(b.last_detected_at).getTime() - new Date(a.last_detected_at).getTime(),
-    );
-  }, [events, realtimeEvents, selectedSeverity, selectedStatus, selectedType, searchQuery]);
+  // Apply deterministic pure filtering logic
+  const displayEvents = useMemo(() => {
+    return filterEvents(mergedEvents, {
+      severity: selectedSeverity,
+      status: selectedStatus,
+      type: selectedType,
+      searchQuery,
+    });
+  }, [mergedEvents, selectedSeverity, selectedStatus, selectedType, searchQuery]);
 
   // Unique event types available from data merged with standard catalog
   const uniqueEventTypes = useMemo(() => {

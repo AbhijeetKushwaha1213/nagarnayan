@@ -13,6 +13,7 @@ import { Panel, PanelHeader } from '@/components/ui/Panel';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PageContainer } from '@/components/layout/Page';
 import { getIcon } from '@/components/ui/icons';
+import { computeDashboardMetrics } from '@/utils/dashboardMetrics';
 import type {
   Alert,
   Bus,
@@ -91,9 +92,7 @@ export function Dashboard() {
   const mergedEvents = useMemo(() => {
     if (realtimeEvents.length === 0) return stats.events;
     const map = new Map<string, UrbanEvent>();
-    // Add REST events
     for (const e of stats.events) map.set(e.id, e);
-    // Overlay real-time updates
     for (const e of realtimeEvents) map.set(e.id, e);
     return Array.from(map.values());
   }, [stats.events, realtimeEvents]);
@@ -101,25 +100,30 @@ export function Dashboard() {
   const mergedAlerts = useMemo(() => {
     if (realtimeAlerts.length === 0) return stats.alerts;
     const map = new Map<string, Alert>();
-    // Add REST alerts
     for (const a of stats.alerts) map.set(a.id, a);
-    // Overlay real-time updates
     for (const a of realtimeAlerts) map.set(a.id, a);
     return Array.from(map.values());
   }, [stats.alerts, realtimeAlerts]);
 
-  // Derived metrics
-  const activeEventsCount = mergedEvents.filter(
-    (e) => e.status !== 'RESOLVED' && e.status !== 'REJECTED',
-  ).length;
+  // Derived metrics via reusable pure computation function
+  const kpis = useMemo(() => {
+    return computeDashboardMetrics({
+      events: mergedEvents,
+      alerts: mergedAlerts,
+      buses: stats.buses,
+      cameras: stats.cameras,
+      streams: stats.streams,
+    });
+  }, [mergedEvents, mergedAlerts, stats.buses, stats.cameras, stats.streams]);
 
-  const criticalHighAlerts = mergedAlerts.filter(
-    (a) => (a.severity === 'CRITICAL' || a.severity === 'HIGH') && a.status !== 'RESOLVED' && a.status !== 'DISMISSED',
-  );
-
-  const activeBusesCount = stats.buses.filter((b) => b.status === 'active').length;
-  const activeCamerasCount = stats.cameras.filter((c) => c.status === 'active').length;
-  const activeStreamsCount = stats.streams.filter((s) => s.status === 'active').length;
+  const criticalHighAlerts = useMemo(() => {
+    return mergedAlerts.filter(
+      (a) =>
+        (a.severity === 'CRITICAL' || a.severity === 'HIGH') &&
+        a.status !== 'RESOLVED' &&
+        a.status !== 'DISMISSED',
+    );
+  }, [mergedAlerts]);
 
   const AlertIcon = getIcon('alert-triangle');
   const BellIcon = getIcon('bell');
@@ -159,7 +163,7 @@ export function Dashboard() {
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <span className="text-[22px] font-bold text-ink-900">{activeEventsCount}</span>
+              <span className="text-[22px] font-bold text-ink-900">{kpis.activeEventsCount}</span>
             )}
             <span className="text-[11px] text-ink-400">unresolved</span>
           </div>
@@ -180,7 +184,7 @@ export function Dashboard() {
               <Skeleton className="h-7 w-16" />
             ) : (
               <span className="text-[22px] font-bold text-rose-600">
-                {criticalHighAlerts.length}
+                {kpis.criticalHighAlertsCount}
               </span>
             )}
             <span className="text-[11px] text-ink-400">High / Critical</span>
@@ -201,10 +205,10 @@ export function Dashboard() {
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <span className="text-[22px] font-bold text-ink-900">{stats.buses.length}</span>
+              <span className="text-[22px] font-bold text-ink-900">{kpis.totalBusesCount}</span>
             )}
             <span className="text-[11px] text-ink-400">
-              {activeBusesCount} active
+              {kpis.activeBusesCount} active
             </span>
           </div>
         </div>
@@ -223,10 +227,10 @@ export function Dashboard() {
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <span className="text-[22px] font-bold text-ink-900">{stats.cameras.length}</span>
+              <span className="text-[22px] font-bold text-ink-900">{kpis.totalCamerasCount}</span>
             )}
             <span className="text-[11px] text-ink-400">
-              {activeCamerasCount} online
+              {kpis.activeCamerasCount} online
             </span>
           </div>
         </div>
@@ -245,10 +249,10 @@ export function Dashboard() {
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <span className="text-[22px] font-bold text-ink-900">{stats.streams.length}</span>
+              <span className="text-[22px] font-bold text-ink-900">{kpis.totalStreamsCount}</span>
             )}
             <span className="text-[11px] text-ink-400">
-              {activeStreamsCount} active
+              {kpis.activeStreamsCount} active
             </span>
           </div>
         </div>

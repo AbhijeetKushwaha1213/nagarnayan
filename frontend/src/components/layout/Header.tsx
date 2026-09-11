@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { NAV_ITEMS } from '@/config/nav';
-import { CITY } from '@/mock/city';
-import { useCommandMetrics } from '@/services/hooks';
 import { useRealtime } from '@/context/RealtimeContext';
 import { getIcon } from '@/components/ui/icons';
 
@@ -18,8 +16,7 @@ function useClock() {
 export function Header() {
   const { pathname } = useLocation();
   const now = useClock();
-  const { data: metrics } = useCommandMetrics();
-  const { connectionStatus, activeClients, reconnect } = useRealtime();
+  const { connectionStatus, activeClients, alerts, reconnect } = useRealtime();
 
   const current =
     NAV_ITEMS.find((n) => (n.to === '/' ? pathname === '/' : pathname.startsWith(n.to))) ??
@@ -28,7 +25,14 @@ export function Header() {
   const Search = getIcon('search');
   const Bell = getIcon('bell');
   const Siren = getIcon('siren');
-  const critical = metrics?.criticalAlerts ?? 0;
+
+  // Derive critical alerts count strictly from real backend/realtime alert records
+  const critical = alerts.filter(
+    (a) =>
+      (a.severity === 'CRITICAL' || a.severity === 'HIGH') &&
+      a.status !== 'RESOLVED' &&
+      a.status !== 'DISMISSED',
+  ).length;
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border-subtle bg-surface px-5">
@@ -39,7 +43,7 @@ export function Header() {
           </h1>
         </div>
         <p className="text-[11px] text-ink-500">
-          {CITY.authority} · {CITY.name}
+          Urban Operations Authority · Fleet Sensing Network
         </p>
       </div>
 
