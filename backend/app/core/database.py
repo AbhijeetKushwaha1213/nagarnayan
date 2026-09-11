@@ -50,8 +50,10 @@ def _get_engine() -> AsyncEngine | None:
             url,
             echo=False,
             pool_pre_ping=True,   # verify connections before use
-            pool_size=5,
-            max_overflow=10,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=15.0,
+            pool_recycle=300,
         )
         logger.info("Async database engine created")
     return _engine

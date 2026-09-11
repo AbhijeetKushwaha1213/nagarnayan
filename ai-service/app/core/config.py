@@ -192,7 +192,7 @@ class Settings(BaseSettings):
         description="Backend API URL path prefix",
     )
     BACKEND_REQUEST_TIMEOUT_SECONDS: float = Field(
-        default=5.0,
+        default=30.0,
         gt=0.0,
         description="HTTP request timeout to backend",
     )

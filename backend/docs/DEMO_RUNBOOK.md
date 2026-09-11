@@ -165,14 +165,29 @@ Inspect the interface:
 
 ## 3. Automated End-to-End Verification
 
-To verify all backend stages (Ingestion -> Correlation -> Severity -> Alert -> GeoJSON -> WebSocket) automatically:
+To verify the pipeline automatically, execute:
 ```bash
 cd backend
 PYTHONPATH=. .venv/bin/python scripts/verify_e2e_pipeline.py
 ```
+
+The verification suite executes in two clearly demarcated sections:
+- **[SECTION A] REAL AI E2E PIPELINE VERIFICATION**:
+  - Connects to the live RTSP stream (`rtsp://localhost:8554/bus/front`).
+  - Executes live YOLOv8n object detection, ByteTrack tracking, and MultiFrameValidator.
+  - Submits genuine validated detections (`VEHICLE` / `PEDESTRIAN`) via `DetectionSender`.
+  - Asserts HTTP 201 backend ingestion and corresponding Urban Event creation.
+  - Verifies real-time WebSocket delivery and GIS coordinate mapping.
+- **[SECTION B] BACKEND SYNTHETIC CONTRACT & EDGE-CASE VERIFICATION**:
+  - Validates spatial clustering proximity (~5m correlation).
+  - Validates frame reference idempotency deduplication.
+  - Validates distant observation separation (>5km).
+  - Validates missing GPS handling.
+  - Validates municipal alert synthesis, lifecycle transitions, and escalation.
+
 When all criteria are met, the script will output:
 ```
-=================================================================
-ALL END-TO-END PIPELINE INTEGRATION CRITERIA PASSED!
-=================================================================
+======================================================================
+ALL PHASE 9.1 END-TO-END VERIFICATION CHECKS PASSED SUCCESSFULLY!
+======================================================================
 ```
