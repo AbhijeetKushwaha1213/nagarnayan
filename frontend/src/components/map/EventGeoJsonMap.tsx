@@ -3,7 +3,7 @@
  *
  * Consumes RFC 7946 GeoJSON FeatureCollections from GET /api/v1/events/geojson.
  * Safely renders markers ONLY for events with valid coordinates.
- * Never fabricates coordinates for missing GPS events.
+ * Never fabricates coordinates for missing GPS events or defaults to arbitrary locations.
  */
 
 import { useEffect, useMemo } from 'react';
@@ -23,8 +23,9 @@ interface EventGeoJsonMapProps {
   zoom?: number;
 }
 
-const DEFAULT_CENTER: [number, number] = [12.9716, 77.5946]; // Default urban sensing center
-const DEFAULT_ZOOM = 13;
+// Neutral default viewport when no geographic telemetry is available
+const NEUTRAL_CENTER: [number, number] = [0, 0];
+const NEUTRAL_ZOOM = 2;
 
 function getSeverityColor(severity: string): string {
   switch (severity?.toUpperCase()) {
@@ -71,6 +72,21 @@ function MapController({
 }) {
   const map = useMap();
 
+  // 1. Auto-fit to actual data bounds whenever features change and no event is specifically selected
+  useEffect(() => {
+    if (!selectedId && features.length > 0) {
+      const latLngs: L.LatLngExpression[] = features.map((f) => {
+        const [lng, lat] = f.geometry!.coordinates;
+        return [lat, lng];
+      });
+      const bounds = L.latLngBounds(latLngs);
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { maxZoom: 15, padding: [40, 40] });
+      }
+    }
+  }, [features, selectedId, map]);
+
+  // 2. Fly to explicitly selected event marker
   useEffect(() => {
     if (selectedId) {
       const selected = features.find((f) => f.properties.event_id === selectedId);
@@ -95,10 +111,11 @@ export function EventGeoJsonMap({
   selectedEventId,
   onSelectEvent,
   className = 'h-[500px] w-full',
-  center = DEFAULT_CENTER,
-  zoom = DEFAULT_ZOOM,
+  center,
+  zoom,
 }: EventGeoJsonMapProps) {
   // Filter features with valid GeoJSON point coordinates
+  // Strictly validate [longitude, latitude] ordering and omit invalid/missing telemetry
   const validFeatures = useMemo(() => {
     if (!geoJson?.features || !Array.isArray(geoJson.features)) {
       return [];
@@ -120,6 +137,18 @@ export function EventGeoJsonMap({
       );
     });
   }, [geoJson]);
+
+  // Determine initial center: provided prop, or first valid feature, or neutral world
+  const initialCenter: [number, number] = useMemo(() => {
+    if (center) return center;
+    if (validFeatures.length > 0) {
+      const [lng, lat] = validFeatures[0].geometry!.coordinates;
+      return [lat, lng];
+    }
+    return NEUTRAL_CENTER;
+  }, [center, validFeatures]);
+
+  const initialZoom = zoom ?? (validFeatures.length > 0 ? 13 : NEUTRAL_ZOOM);
 
   return (
     <div className={`relative overflow-hidden rounded-md border border-border-subtle bg-surface ${className}`}>
@@ -148,8 +177,8 @@ export function EventGeoJsonMap({
       ) : null}
 
       <MapContainer
-        center={center}
-        zoom={zoom}
+        center={initialCenter}
+        zoom={initialZoom}
         zoomControl
         className="h-full w-full"
         preferCanvas

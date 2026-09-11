@@ -22,6 +22,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── Enum types ────────────────────────────────────────────────────────────
+    op.execute("""
+    DO $$ BEGIN
+        CREATE TYPE alerttype AS ENUM ('MUNICIPAL_ISSUE', 'CRITICAL_INFRASTRUCTURE', 'TRAFFIC_HAZARD');
+    EXCEPTION WHEN duplicate_object THEN null;
+    END $$;
+    """)
+    op.execute("""
+    DO $$ BEGIN
+        CREATE TYPE alertstatus AS ENUM ('ACTIVE', 'NEW', 'ACKNOWLEDGED', 'RESOLVED', 'DISMISSED');
+    EXCEPTION WHEN duplicate_object THEN null;
+    END $$;
+    """)
+
     alerttype = postgresql.ENUM(
         "MUNICIPAL_ISSUE",
         "CRITICAL_INFRASTRUCTURE",
@@ -29,9 +42,16 @@ def upgrade() -> None:
         name="alerttype",
         create_type=False,
     )
-    alerttype.create(op.get_bind(), checkfirst=True)
-
+    eventseverity = postgresql.ENUM(
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL",
+        name="eventseverity",
+        create_type=False,
+    )
     alertstatus = postgresql.ENUM(
+        "ACTIVE",
         "NEW",
         "ACKNOWLEDGED",
         "RESOLVED",
@@ -39,7 +59,6 @@ def upgrade() -> None:
         name="alertstatus",
         create_type=False,
     )
-    alertstatus.create(op.get_bind(), checkfirst=True)
 
     # ── alerts table ──────────────────────────────────────────────────────────
     op.create_table(
@@ -58,37 +77,17 @@ def upgrade() -> None:
         ),
         sa.Column(
             "alert_type",
-            sa.Enum(
-                "MUNICIPAL_ISSUE",
-                "CRITICAL_INFRASTRUCTURE",
-                "TRAFFIC_HAZARD",
-                name="alerttype",
-                create_type=False,
-            ),
+            alerttype,
             nullable=False,
         ),
         sa.Column(
             "severity",
-            sa.Enum(
-                "LOW",
-                "MEDIUM",
-                "HIGH",
-                "CRITICAL",
-                name="eventseverity",
-                create_type=False,
-            ),
+            eventseverity,
             nullable=False,
         ),
         sa.Column(
             "status",
-            sa.Enum(
-                "NEW",
-                "ACKNOWLEDGED",
-                "RESOLVED",
-                "DISMISSED",
-                name="alertstatus",
-                create_type=False,
-            ),
+            alertstatus,
             nullable=False,
             server_default="NEW",
         ),

@@ -27,26 +27,17 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
 
     # ── Enum types ────────────────────────────────────────────────────────────
+    op.execute("DO $$ BEGIN CREATE TYPE busstatus AS ENUM ('active', 'inactive'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE cameratype AS ENUM ('front', 'rear', 'side', 'interior'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE camerastatus AS ENUM ('active', 'inactive', 'error'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE streamprotocol AS ENUM ('rtsp'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE streamstatus AS ENUM ('active', 'inactive', 'error'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+
     busstatus = postgresql.ENUM("active", "inactive", name="busstatus", create_type=False)
-    busstatus.create(op.get_bind(), checkfirst=True)
-
-    cameratype = postgresql.ENUM(
-        "front", "rear", "side", "interior", name="cameratype", create_type=False
-    )
-    cameratype.create(op.get_bind(), checkfirst=True)
-
-    camerastatus = postgresql.ENUM(
-        "active", "inactive", "error", name="camerastatus", create_type=False
-    )
-    camerastatus.create(op.get_bind(), checkfirst=True)
-
+    cameratype = postgresql.ENUM("front", "rear", "side", "interior", name="cameratype", create_type=False)
+    camerastatus = postgresql.ENUM("active", "inactive", "error", name="camerastatus", create_type=False)
     streamprotocol = postgresql.ENUM("rtsp", name="streamprotocol", create_type=False)
-    streamprotocol.create(op.get_bind(), checkfirst=True)
-
-    streamstatus = postgresql.ENUM(
-        "active", "inactive", "error", name="streamstatus", create_type=False
-    )
-    streamstatus.create(op.get_bind(), checkfirst=True)
+    streamstatus = postgresql.ENUM("active", "inactive", "error", name="streamstatus", create_type=False)
 
     # ── buses ─────────────────────────────────────────────────────────────────
     op.create_table(
@@ -61,7 +52,7 @@ def upgrade() -> None:
         sa.Column("route_id", sa.String(100), nullable=True),
         sa.Column(
             "status",
-            sa.Enum("active", "inactive", name="busstatus", create_type=False),
+            busstatus,
             nullable=False,
             server_default="active",
         ),
@@ -93,20 +84,12 @@ def upgrade() -> None:
         sa.Column("bus_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column(
             "camera_type",
-            sa.Enum(
-                "front", "rear", "side", "interior",
-                name="cameratype",
-                create_type=False,
-            ),
+            cameratype,
             nullable=False,
         ),
         sa.Column(
             "status",
-            sa.Enum(
-                "active", "inactive", "error",
-                name="camerastatus",
-                create_type=False,
-            ),
+            camerastatus,
             nullable=False,
             server_default="active",
         ),
@@ -141,17 +124,13 @@ def upgrade() -> None:
         sa.Column("stream_url", sa.String(500), nullable=False),
         sa.Column(
             "protocol",
-            sa.Enum("rtsp", name="streamprotocol", create_type=False),
+            streamprotocol,
             nullable=False,
             server_default="rtsp",
         ),
         sa.Column(
             "status",
-            sa.Enum(
-                "active", "inactive", "error",
-                name="streamstatus",
-                create_type=False,
-            ),
+            streamstatus,
             nullable=False,
             server_default="inactive",
         ),

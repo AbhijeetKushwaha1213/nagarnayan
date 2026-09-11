@@ -19,9 +19,24 @@ const STATUS_OPTIONS: ('ALL' | EventStatus)[] = [
   'ALL',
   'DETECTED',
   'VERIFIED',
+  'OPEN',
+  'ACKNOWLEDGED',
   'IN_PROGRESS',
   'RESOLVED',
   'REJECTED',
+];
+
+const STANDARD_EVENT_TYPES = [
+  'POTHOLE',
+  'DAMAGED_ROAD',
+  'WATERLOGGING',
+  'MISSING_DIVIDER',
+  'MISSING_ZEBRA_CROSSING',
+  'MISSING_SIGNBOARD',
+  'TRAFFIC_CONGESTION',
+  'VEHICLE',
+  'PEDESTRIAN',
+  'OTHER',
 ];
 
 export function EventsPage() {
@@ -68,12 +83,14 @@ export function EventsPage() {
       const matchesSeverity = selectedSeverity === 'ALL' || e.severity === selectedSeverity;
       const matchesStatus = selectedStatus === 'ALL' || e.status === selectedStatus;
       const matchesType = selectedType === 'ALL' || e.event_type === selectedType;
+
       if (matchesSeverity && matchesStatus && matchesType) {
         map.set(e.id, e);
       }
     }
 
     let list = Array.from(map.values());
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(
@@ -84,47 +101,49 @@ export function EventsPage() {
       );
     }
 
-    // Sort by last detected timestamp descending
     return list.sort(
       (a, b) => new Date(b.last_detected_at).getTime() - new Date(a.last_detected_at).getTime(),
     );
   }, [events, realtimeEvents, selectedSeverity, selectedStatus, selectedType, searchQuery]);
 
+  // Unique event types available from data merged with standard catalog
   const uniqueEventTypes = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of events) set.add(e.event_type);
-    for (const e of realtimeEvents) set.add(e.event_type);
-    return Array.from(set);
+    const types = new Set<string>(STANDARD_EVENT_TYPES);
+    for (const e of events) types.add(e.event_type);
+    for (const e of realtimeEvents) types.add(e.event_type);
+    return Array.from(types).sort();
   }, [events, realtimeEvents]);
 
-  const SearchIcon = getIcon('search');
   const FilterIcon = getIcon('filter');
+  const SearchIcon = getIcon('search');
 
   return (
     <PageContainer className="flex flex-col gap-4">
       <Panel className="p-4">
         <PanelHeader
           title="Urban Events Registry"
-          subtitle="Real-time correlated urban municipal issues detected across the transit sensing grid"
+          subtitle="Validated physical road hazards and traffic events correlated from sensor detections"
+          icon={<FilterIcon size={16} />}
         />
 
-        {/* Filter Controls Bar */}
+        {/* Filters Toolbar */}
         <div className="mt-4 flex flex-wrap items-center gap-3 border-b border-border-subtle pb-4">
-          {/* Search Box */}
-          <div className="flex min-w-[220px] flex-1 items-center gap-2 rounded border border-border-subtle bg-surface-muted px-2.5 py-1.5 text-ink-600">
-            <SearchIcon size={14} />
+          {/* Search Input */}
+          <div className="relative min-w-[220px] flex-1">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400">
+              <SearchIcon size={13} />
+            </span>
             <input
               type="text"
+              placeholder="Search by event type, ID, or bus..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by event type or ID..."
-              className="w-full bg-transparent text-[12px] text-ink-800 placeholder:text-ink-400 focus:outline-none"
+              className="w-full rounded border border-border-subtle bg-surface py-1 pl-8 pr-3 text-[12px] text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none"
             />
           </div>
 
           {/* Event Type Filter */}
           <div className="flex items-center gap-1.5 text-[12px] text-ink-600">
-            <FilterIcon size={13} />
             <span>Type:</span>
             <select
               value={selectedType}

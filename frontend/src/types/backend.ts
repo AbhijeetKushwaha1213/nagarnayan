@@ -12,29 +12,23 @@ export type EventSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type EventStatus =
   | 'DETECTED'
   | 'VERIFIED'
+  | 'OPEN'
+  | 'ACKNOWLEDGED'
   | 'IN_PROGRESS'
   | 'RESOLVED'
   | 'REJECTED';
 
 export type EventType =
   | 'POTHOLE'
-  | 'ROAD_CRACK'
-  | 'SURFACE_DAMAGE'
-  | 'ROAD_OBSTRUCTION'
+  | 'DAMAGED_ROAD'
   | 'WATERLOGGING'
-  | 'TRAFFIC_CONGESTION'
-  | 'TRAFFIC_BOTTLENECK'
-  | 'MISSING_ZEBRA_CROSSING'
-  | 'DAMAGED_SIGN'
-  | 'MISSING_SIGN'
-  | 'DAMAGED_DIVIDER'
   | 'MISSING_DIVIDER'
-  | 'DANGEROUS_CROSSING'
-  | 'VULNERABLE_PEDESTRIAN'
-  | 'SCHOOL_ZONE_RISK'
-  | 'RASH_DRIVING'
-  | 'POSSIBLE_INCIDENT'
-  | 'HIT_AND_RUN'
+  | 'MISSING_ZEBRA_CROSSING'
+  | 'MISSING_SIGNBOARD'
+  | 'TRAFFIC_CONGESTION'
+  | 'VEHICLE'
+  | 'PEDESTRIAN'
+  | 'OTHER'
   | string;
 
 export type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -48,9 +42,8 @@ export type AlertStatus =
 
 export type AlertType =
   | 'MUNICIPAL_ISSUE'
-  | 'INFRASTRUCTURE_HAZARD'
-  | 'TRAFFIC_IMPACT'
-  | 'SAFETY_RISK'
+  | 'CRITICAL_INFRASTRUCTURE'
+  | 'TRAFFIC_HAZARD'
   | string;
 
 export type BusStatus = 'active' | 'inactive';

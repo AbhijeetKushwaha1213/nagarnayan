@@ -23,6 +23,32 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── Enum types ────────────────────────────────────────────────────────────
+    op.execute("""
+    DO $$ BEGIN
+        CREATE TYPE eventtype AS ENUM (
+            'POTHOLE', 'DAMAGED_ROAD', 'WATERLOGGING', 'MISSING_DIVIDER',
+            'MISSING_ZEBRA_CROSSING', 'MISSING_SIGNBOARD', 'TRAFFIC_CONGESTION',
+            'VEHICLE', 'PEDESTRIAN', 'OTHER'
+        );
+    EXCEPTION WHEN duplicate_object THEN null;
+    END $$;
+    """)
+    op.execute("""
+    DO $$ BEGIN
+        CREATE TYPE eventseverity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
+    EXCEPTION WHEN duplicate_object THEN null;
+    END $$;
+    """)
+    op.execute("""
+    DO $$ BEGIN
+        CREATE TYPE eventstatus AS ENUM (
+            'DETECTED', 'VERIFIED', 'OPEN', 'ACKNOWLEDGED',
+            'IN_PROGRESS', 'RESOLVED', 'REJECTED'
+        );
+    EXCEPTION WHEN duplicate_object THEN null;
+    END $$;
+    """)
+
     eventtype = postgresql.ENUM(
         "POTHOLE",
         "DAMAGED_ROAD",
@@ -37,7 +63,6 @@ def upgrade() -> None:
         name="eventtype",
         create_type=False,
     )
-    eventtype.create(op.get_bind(), checkfirst=True)
 
     eventseverity = postgresql.ENUM(
         "LOW",
@@ -47,7 +72,6 @@ def upgrade() -> None:
         name="eventseverity",
         create_type=False,
     )
-    eventseverity.create(op.get_bind(), checkfirst=True)
 
     eventstatus = postgresql.ENUM(
         "DETECTED",
@@ -60,7 +84,6 @@ def upgrade() -> None:
         name="eventstatus",
         create_type=False,
     )
-    eventstatus.create(op.get_bind(), checkfirst=True)
 
     # ── events table ──────────────────────────────────────────────────────────
     op.create_table(
@@ -73,48 +96,18 @@ def upgrade() -> None:
         ),
         sa.Column(
             "event_type",
-            sa.Enum(
-                "POTHOLE",
-                "DAMAGED_ROAD",
-                "WATERLOGGING",
-                "MISSING_DIVIDER",
-                "MISSING_ZEBRA_CROSSING",
-                "MISSING_SIGNBOARD",
-                "TRAFFIC_CONGESTION",
-                "VEHICLE",
-                "PEDESTRIAN",
-                "OTHER",
-                name="eventtype",
-                create_type=False,
-            ),
+            eventtype,
             nullable=False,
         ),
         sa.Column(
             "severity",
-            sa.Enum(
-                "LOW",
-                "MEDIUM",
-                "HIGH",
-                "CRITICAL",
-                name="eventseverity",
-                create_type=False,
-            ),
+            eventseverity,
             nullable=False,
             server_default="MEDIUM",
         ),
         sa.Column(
             "status",
-            sa.Enum(
-                "DETECTED",
-                "VERIFIED",
-                "OPEN",
-                "ACKNOWLEDGED",
-                "IN_PROGRESS",
-                "RESOLVED",
-                "REJECTED",
-                name="eventstatus",
-                create_type=False,
-            ),
+            eventstatus,
             nullable=False,
             server_default="DETECTED",
         ),

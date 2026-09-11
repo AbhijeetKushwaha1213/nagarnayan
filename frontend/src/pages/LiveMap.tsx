@@ -1,8 +1,8 @@
 /**
- * Nagar Nayan — Real-time GIS Live Map View
+ * Nagar Nayan — Real-Time GIS Spatial Event Telemetry
  *
- * Full-page GIS situational map consuming GET /api/v1/events/geojson
- * with interactive feature filtering and spatial telemetry inspection.
+ * Visualizes municipal event distribution from GET /api/v1/events/geojson.
+ * Markers render only when valid coordinates exist; null coordinates are omitted safely.
  */
 
 import { useEffect, useState, useMemo } from 'react';
@@ -18,6 +18,8 @@ const STATUS_OPTIONS: ('ALL' | EventStatus)[] = [
   'ALL',
   'DETECTED',
   'VERIFIED',
+  'OPEN',
+  'ACKNOWLEDGED',
   'IN_PROGRESS',
   'RESOLVED',
   'REJECTED',
@@ -68,7 +70,7 @@ export function LiveMap() {
       <Panel className="p-4">
         <PanelHeader
           title="Municipal GIS Event Mapping"
-          subtitle="Spatial telemetry overlay of validated urban hazards across Bangalore municipal road grid"
+          subtitle="Spatial telemetry overlay of validated urban hazards across municipal road network"
           icon={<MapIcon size={16} />}
         />
 
