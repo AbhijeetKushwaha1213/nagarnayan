@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { UrbanEvent } from '@/types/domain';
-import { useCommandMetrics, useEvents, useFleet, useTraffic } from '@/services/hooks';
+import { useCommandMetrics, useEvents, useFleet } from '@/services/hooks';
 import { defaultLayerState, type MapLayerState } from '@/components/map/MapFilters';
 import { MapPanel } from '@/components/map/MapPanel';
 import { MetricCard } from '@/components/analytics/MetricCard';
@@ -18,7 +18,6 @@ export function CommandCenter() {
   const { data: events, isLoading: eventsLoading } = useEvents();
   const { data: fleet } = useFleet();
   const { data: metrics, isLoading: metricsLoading } = useCommandMetrics();
-  const { data: traffic } = useTraffic();
 
   const [layers, setLayersState] = useState<MapLayerState>(defaultLayerState);
   const setLayers = (u: (p: MapLayerState) => MapLayerState) => setLayersState(u);

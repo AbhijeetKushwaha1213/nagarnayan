@@ -1,81 +1,252 @@
-import { useMemo, useState } from 'react';
-import { useEvents } from '@/services/hooks';
-import { CATEGORY_META } from '@/config/taxonomy';
-import { EventDetailPanel } from '@/components/events/EventDetailPanel';
-import { SeverityBadge, StatusBadge } from '@/components/events/badges';
+/**
+ * Nagar Nayan — Municipal Alert Queue
+ *
+ * Real API-driven alerts page displaying actionable issues synthesized by the
+ * Phase 6 Alert Engine, with real-time escalation updates and severity filtering.
+ */
+
+import { useEffect, useState, useMemo } from 'react';
+import { api } from '@/services/apiClient';
+import { useRealtime } from '@/context/RealtimeContext';
 import { Panel, PanelHeader } from '@/components/ui/Panel';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { PageContainer } from '@/components/layout/Page';
-import { timeAgo } from '@/lib/format';
 import { getIcon } from '@/components/ui/icons';
+import type { Alert, AlertSeverity, AlertStatus } from '@/types/backend';
+
+const SEVERITY_OPTIONS: ('ALL' | AlertSeverity)[] = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+const STATUS_OPTIONS: ('ALL' | AlertStatus)[] = [
+  'ALL',
+  'ACTIVE',
+  'NEW',
+  'ACKNOWLEDGED',
+  'RESOLVED',
+  'DISMISSED',
+];
 
 export function Alerts() {
-  const { data: events } = useEvents();
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const { alerts: realtimeAlerts } = useRealtime();
 
-  const alerts = useMemo(
-    () =>
-      (events ?? []).filter(
-        (e) =>
-          (e.severity === 'critical' || e.severity === 'high') &&
-          e.status !== 'resolved' &&
-          e.status !== 'dismissed',
-      ),
-    [events],
-  );
-  const selected = events?.find((e) => e.id === selectedId) ?? null;
-  const Siren = getIcon('siren');
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filters
+  const [selectedSeverity, setSelectedSeverity] = useState<'ALL' | AlertSeverity>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<'ALL' | AlertStatus>('ALL');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const fetchAlerts = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await api.getAlerts({
+        severity: selectedSeverity === 'ALL' ? undefined : selectedSeverity,
+        status: selectedStatus === 'ALL' ? undefined : selectedStatus,
+        limit: 150,
+      });
+      setAlerts(data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to retrieve municipal alerts');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAlerts();
+  }, [selectedSeverity, selectedStatus]);
+
+  // Merge REST alerts with realtime WebSocket alerts using stable identity
+  const displayAlerts = useMemo(() => {
+    const map = new Map<string, Alert>();
+    for (const a of alerts) map.set(a.id, a);
+    for (const a of realtimeAlerts) {
+      const matchesSeverity = selectedSeverity === 'ALL' || a.severity === selectedSeverity;
+      const matchesStatus = selectedStatus === 'ALL' || a.status === selectedStatus;
+      if (matchesSeverity && matchesStatus) {
+        map.set(a.id, a);
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      const tA = a.triggered_at ? new Date(a.triggered_at).getTime() : new Date(a.created_at).getTime();
+      const tB = b.triggered_at ? new Date(b.triggered_at).getTime() : new Date(b.created_at).getTime();
+      return tB - tA;
+    });
+  }, [alerts, realtimeAlerts, selectedSeverity, selectedStatus]);
+
+  const copyEventId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const BellIcon = getIcon('bell');
+  const FilterIcon = getIcon('filter');
 
   return (
-    <PageContainer>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel className="xl:col-span-2">
-          <PanelHeader
-            title="Priority Alert Queue"
-            subtitle={`${alerts.length} unresolved critical & high-severity detections`}
-            icon={<Siren size={15} />}
-          />
-          <div className="divide-y divide-border-subtle">
-            {alerts.map((e) => {
-              const cat = CATEGORY_META[e.category];
-              const Icon = getIcon(cat.icon);
-              return (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => setSelectedId(e.id)}
-                  className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-muted ${
-                    e.id === selectedId ? 'bg-brand-50/70' : ''
-                  }`}
-                >
-                  <span
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-md"
-                    style={{ backgroundColor: `${cat.color}14`, color: cat.color }}
-                  >
-                    <Icon size={16} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-semibold text-ink-900">{e.title}</span>
-                      <SeverityBadge severity={e.severity} />
-                    </div>
-                    <p className="text-[11px] text-ink-500">
-                      {e.location.address} · {e.source.busLabel}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <StatusBadge status={e.status} />
-                    <span className="tnum text-[10px] text-ink-400">{timeAgo(e.timestamp)}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </Panel>
+    <PageContainer className="flex flex-col gap-4">
+      <Panel className="p-4">
+        <PanelHeader
+          title="Municipal Alert Queue"
+          subtitle="Prioritized operational alerts generated by the Severity & Alert Engines"
+          icon={<BellIcon size={16} />}
+        />
 
-        <Panel className="h-[560px] overflow-hidden">
-          <EventDetailPanel event={selected} onClose={() => setSelectedId(undefined)} />
-        </Panel>
-      </div>
+        {/* Filter Controls Bar */}
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-b border-border-subtle pb-4">
+          {/* Severity Filter */}
+          <div className="flex items-center gap-1.5 text-[12px] text-ink-600">
+            <FilterIcon size={13} />
+            <span>Severity:</span>
+            <select
+              value={selectedSeverity}
+              onChange={(e) => setSelectedSeverity(e.target.value as any)}
+              className="rounded border border-border-subtle bg-surface px-2 py-1 text-[12px] text-ink-800 focus:outline-none"
+            >
+              {SEVERITY_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-1.5 text-[12px] text-ink-600">
+            <span>Status:</span>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value as any)}
+              className="rounded border border-border-subtle bg-surface px-2 py-1 text-[12px] text-ink-800 focus:outline-none"
+            >
+              {STATUS_OPTIONS.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Refresh Button */}
+          <button
+            type="button"
+            onClick={fetchAlerts}
+            className="rounded border border-border-subtle bg-surface px-3 py-1 text-[12px] font-medium text-ink-700 hover:bg-surface-muted"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {/* Error Notification */}
+        {error ? (
+          <div className="mt-4 flex items-center justify-between rounded bg-critical-soft p-3 text-[12px] text-critical">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={fetchAlerts}
+              className="font-semibold underline hover:no-underline"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : null}
+
+        {/* Alerts Table */}
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-left text-[12px]">
+            <thead>
+              <tr className="border-b border-border-subtle text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                <th className="pb-2.5">Severity</th>
+                <th className="pb-2.5">Title & Description</th>
+                <th className="pb-2.5">Status</th>
+                <th className="pb-2.5">Triggered At</th>
+                <th className="pb-2.5">Event ID</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle text-ink-700">
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="py-3">
+                    <td className="py-3"><Skeleton className="h-4 w-16" /></td>
+                    <td className="py-3"><Skeleton className="h-4 w-64" /></td>
+                    <td className="py-3"><Skeleton className="h-4 w-20" /></td>
+                    <td className="py-3"><Skeleton className="h-4 w-24" /></td>
+                    <td className="py-3"><Skeleton className="h-4 w-28" /></td>
+                  </tr>
+                ))
+              ) : displayAlerts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center text-ink-400">
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-[13px] font-medium text-ink-600">No Alerts Found</span>
+                      <span className="text-[11px] text-ink-400 mt-1">
+                        No municipal alerts match the current filter selection.
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                displayAlerts.map((alert) => (
+                  <tr key={alert.id} className="hover:bg-surface-muted transition-colors">
+                    <td className="py-3">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                          alert.severity === 'CRITICAL'
+                            ? 'bg-rose-100 text-rose-700'
+                            : alert.severity === 'HIGH'
+                            ? 'bg-orange-100 text-orange-700'
+                            : alert.severity === 'MEDIUM'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}
+                      >
+                        {alert.severity}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <div className="font-semibold text-ink-900">{alert.title}</div>
+                      <div className="text-[11px] text-ink-500 line-clamp-1">{alert.message}</div>
+                    </td>
+                    <td className="py-3">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          alert.status === 'ACTIVE' || alert.status === 'NEW'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : alert.status === 'ACKNOWLEDGED'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {alert.status}
+                      </span>
+                    </td>
+                    <td className="py-3 text-[11px] text-ink-500 font-mono">
+                      {alert.triggered_at
+                        ? new Date(alert.triggered_at).toLocaleString()
+                        : new Date(alert.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-3">
+                      <button
+                        type="button"
+                        onClick={() => copyEventId(alert.event_id)}
+                        title="Click to copy Event ID"
+                        className="flex items-center gap-1 rounded bg-surface-muted px-2 py-1 font-mono text-[11px] text-ink-600 hover:bg-slate-200"
+                      >
+                        <span className="truncate max-w-[120px]">{alert.event_id}</span>
+                        <span className="text-[10px] text-ink-400">
+                          {copiedId === alert.event_id ? '✓' : '⧉'}
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
     </PageContainer>
   );
 }

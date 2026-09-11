@@ -1,132 +1,212 @@
-import { useMemo, useState } from 'react';
-import type { EventCategory } from '@/types/domain';
-import { useEvents, useFleet } from '@/services/hooks';
-import { CATEGORY_ORDER } from '@/mock/city';
-import {
-  defaultLayerState,
-  MapFilters,
-  type MapLayerState,
-} from '@/components/map/MapFilters';
-import { CityMap } from '@/components/map/CityMap';
-import { EventDetailPanel } from '@/components/events/EventDetailPanel';
-import { EventCard } from '@/components/events/EventCard';
+/**
+ * Nagar Nayan — Real-time GIS Live Map View
+ *
+ * Full-page GIS situational map consuming GET /api/v1/events/geojson
+ * with interactive feature filtering and spatial telemetry inspection.
+ */
+
+import { useEffect, useState, useMemo } from 'react';
+import { api } from '@/services/apiClient';
+import { EventGeoJsonMap } from '@/components/map/EventGeoJsonMap';
+import { Panel, PanelHeader } from '@/components/ui/Panel';
+import { PageContainer } from '@/components/layout/Page';
 import { getIcon } from '@/components/ui/icons';
+import type { EventSeverity, EventStatus, GeoJSONFeatureCollection } from '@/types/backend';
+
+const SEVERITY_OPTIONS: ('ALL' | EventSeverity)[] = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+const STATUS_OPTIONS: ('ALL' | EventStatus)[] = [
+  'ALL',
+  'DETECTED',
+  'VERIFIED',
+  'IN_PROGRESS',
+  'RESOLVED',
+  'REJECTED',
+];
 
 export function LiveMap() {
-  const { data: events } = useEvents();
-  const { data: fleet } = useFleet();
-  const [layers, setLayers] = useState<MapLayerState>(defaultLayerState);
-  const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [query, setQuery] = useState('');
+  const [geoJson, setGeoJson] = useState<GeoJSONFeatureCollection | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const selected = events?.find((e) => e.id === selectedId) ?? null;
+  const [selectedSeverity, setSelectedSeverity] = useState<'ALL' | EventSeverity>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<'ALL' | EventStatus>('ALL');
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
 
-  const counts = useMemo(() => {
-    return CATEGORY_ORDER.reduce(
-      (acc, c) => {
-        acc[c] = (events ?? []).filter((e) => e.category === c).length;
-        return acc;
-      },
-      {} as Record<EventCategory, number>,
-    );
-  }, [events]);
+  const fetchGeoJSON = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await api.getEventGeoJSON({
+        severity: selectedSeverity === 'ALL' ? undefined : selectedSeverity,
+        status: selectedStatus === 'ALL' ? undefined : selectedStatus,
+        limit: 250,
+      });
+      setGeoJson(data);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load GeoJSON data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return (events ?? [])
-      .filter((e) => layers.categories.has(e.category))
-      .filter(
-        (e) =>
-          !q ||
-          e.title.toLowerCase().includes(q) ||
-          e.location.address.toLowerCase().includes(q) ||
-          e.location.zone.toLowerCase().includes(q) ||
-          e.source.busId.toLowerCase().includes(q),
-      );
-  }, [events, layers.categories, query]);
+  useEffect(() => {
+    fetchGeoJSON();
+  }, [selectedSeverity, selectedStatus]);
 
-  const toggleCategory = (c: EventCategory) =>
-    setLayers((prev) => {
-      const next = new Set(prev.categories);
-      next.has(c) ? next.delete(c) : next.add(c);
-      return { ...prev, categories: next };
-    });
+  const features = useMemo(() => geoJson?.features || [], [geoJson]);
 
-  const Search = getIcon('search');
-  const Reset = getIcon('reset');
+  const selectedFeature = useMemo(
+    () => features.find((f) => f.properties.event_id === selectedEventId),
+    [features, selectedEventId],
+  );
+
+  const MapIcon = getIcon('map');
+  const FilterIcon = getIcon('filter');
 
   return (
-    <div className="flex h-full min-h-0">
-      {/* Controls */}
-      <div className="on-dark flex w-64 shrink-0 flex-col bg-command-950 text-slate-300">
-        <div className="border-b border-white/5 p-3">
-          <div className="flex items-center gap-2 rounded-sm bg-command-850 px-2.5 py-2 text-slate-400">
-            <Search size={14} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search location or bus…"
-              className="w-full bg-transparent text-[12px] text-slate-200 placeholder:text-slate-500 focus:outline-none"
-            />
+    <PageContainer className="flex flex-col gap-4">
+      <Panel className="p-4">
+        <PanelHeader
+          title="Municipal GIS Event Mapping"
+          subtitle="Spatial telemetry overlay of validated urban hazards across Bangalore municipal road grid"
+          icon={<MapIcon size={16} />}
+        />
+
+        {/* Filter Toolbar */}
+        <div className="mt-3 flex flex-wrap items-center gap-3 border-b border-border-subtle pb-3">
+          <div className="flex items-center gap-1.5 text-[12px] text-ink-600">
+            <FilterIcon size={13} />
+            <span>Severity:</span>
+            <select
+              value={selectedSeverity}
+              onChange={(e) => setSelectedSeverity(e.target.value as any)}
+              className="rounded border border-border-subtle bg-surface px-2 py-1 text-[12px] text-ink-800 focus:outline-none"
+            >
+              {SEVERITY_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          <MapFilters
-            state={layers}
-            counts={counts}
-            onToggleCategory={toggleCategory}
-            onToggleFleet={() => setLayers((p) => ({ ...p, showFleet: !p.showFleet }))}
-            onToggleRoutes={() => setLayers((p) => ({ ...p, showRoutes: !p.showRoutes }))}
-          />
-        </div>
-        <div className="border-t border-white/5 p-3">
+
+          <div className="flex items-center gap-1.5 text-[12px] text-ink-600">
+            <span>Status:</span>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value as any)}
+              className="rounded border border-border-subtle bg-surface px-2 py-1 text-[12px] text-ink-800 focus:outline-none"
+            >
+              {STATUS_OPTIONS.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <span className="text-[11px] text-ink-400">
+            {features.length} feature{features.length === 1 ? '' : 's'} returned
+          </span>
+
           <button
             type="button"
-            onClick={() => {
-              setLayers(defaultLayerState());
-              setQuery('');
-              setSelectedId(undefined);
-            }}
-            className="flex w-full items-center justify-center gap-1.5 rounded-sm border border-command-600 px-3 py-2 text-[12px] font-semibold text-slate-300 transition-colors hover:bg-command-800"
+            onClick={fetchGeoJSON}
+            className="ml-auto rounded border border-border-subtle bg-surface px-3 py-1 text-[12px] text-ink-700 hover:bg-surface-muted"
           >
-            <Reset size={13} /> Reset View
+            Refresh Map
           </button>
         </div>
-      </div>
 
-      {/* Map */}
-      <div className="relative min-w-0 flex-1">
-        <CityMap
-          events={filtered}
-          fleet={fleet}
-          layers={layers}
-          selectedId={selectedId}
-          onSelectEvent={(e) => setSelectedId(e.id)}
-          className="absolute inset-0"
-        />
-        <div className="pointer-events-none absolute left-3 top-3 z-[500] rounded-sm bg-command-950/85 px-2.5 py-1.5 text-[12px] font-semibold text-slate-100 ring-1 ring-white/10 backdrop-blur">
-          <span className="tnum">{filtered.length}</span> events on map
-        </div>
-      </div>
-
-      {/* Detail */}
-      <div className="w-[340px] shrink-0 border-l border-border-subtle bg-surface">
-        {selected ? (
-          <EventDetailPanel event={selected} onClose={() => setSelectedId(undefined)} />
-        ) : (
-          <div className="flex h-full flex-col">
-            <div className="border-b border-border-subtle px-4 py-3">
-              <h3 className="text-[13px] font-semibold text-ink-900">Events</h3>
-              <p className="text-[11px] text-ink-500">Select one to inspect details</p>
-            </div>
-            <div className="min-h-0 flex-1 divide-y divide-border-subtle overflow-y-auto">
-              {filtered.map((e) => (
-                <EventCard key={e.id} event={e} onSelect={(ev) => setSelectedId(ev.id)} />
-              ))}
-            </div>
+        {/* Map and Details Grid */}
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-4">
+          <div className="xl:col-span-3">
+            <EventGeoJsonMap
+              geoJson={geoJson}
+              isLoading={isLoading}
+              error={error}
+              selectedEventId={selectedEventId}
+              onSelectEvent={setSelectedEventId}
+              className="h-[600px] w-full"
+            />
           </div>
-        )}
-      </div>
-    </div>
+
+          {/* Side Feature Details */}
+          <div className="flex flex-col gap-3 rounded-md border border-border-subtle bg-surface-muted p-3">
+            <h3 className="text-[12px] font-semibold text-ink-900 border-b border-border-subtle pb-2">
+              Selected Event Telemetry
+            </h3>
+
+            {selectedFeature ? (
+              <div className="space-y-2 text-[12px] text-ink-700">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] font-bold text-ink-900">
+                    {selectedFeature.properties.event_type}
+                  </span>
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                      selectedFeature.properties.severity === 'CRITICAL'
+                        ? 'bg-rose-100 text-rose-700'
+                        : selectedFeature.properties.severity === 'HIGH'
+                        ? 'bg-orange-100 text-orange-700'
+                        : selectedFeature.properties.severity === 'MEDIUM'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}
+                  >
+                    {selectedFeature.properties.severity}
+                  </span>
+                </div>
+
+                <div className="rounded bg-surface p-2.5 space-y-1 text-[11px] border border-border-subtle">
+                  <p>
+                    Status: <span className="font-semibold">{selectedFeature.properties.status}</span>
+                  </p>
+                  <p>
+                    Confidence:{' '}
+                    <span className="font-semibold font-mono">
+                      {(selectedFeature.properties.confidence * 100).toFixed(0)}%
+                    </span>
+                  </p>
+                  <p>
+                    Detected At:{' '}
+                    <span className="font-mono">
+                      {new Date(selectedFeature.properties.detected_at).toLocaleString()}
+                    </span>
+                  </p>
+                  {selectedFeature.geometry ? (
+                    <p className="font-mono text-emerald-700">
+                      GPS: {selectedFeature.geometry.coordinates[1].toFixed(5)},{' '}
+                      {selectedFeature.geometry.coordinates[0].toFixed(5)}
+                    </p>
+                  ) : (
+                    <p className="text-ink-400">Coordinates: Not Available</p>
+                  )}
+                  <p className="font-mono text-[10px] text-ink-400 truncate">
+                    UUID: {selectedFeature.properties.event_id}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedEventId(undefined)}
+                  className="w-full rounded border border-border-subtle bg-surface py-1 text-[11px] text-ink-600 hover:bg-slate-100"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center text-ink-400">
+                <MapIcon size={24} className="mb-2 opacity-50" />
+                <p className="text-[12px] font-medium text-ink-600">No Event Selected</p>
+                <p className="text-[11px] mt-1 text-ink-400">
+                  Click any marker on the map to inspect spatial properties.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Panel>
+    </PageContainer>
   );
 }

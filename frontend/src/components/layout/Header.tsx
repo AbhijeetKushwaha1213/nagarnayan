@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { NAV_ITEMS } from '@/config/nav';
 import { CITY } from '@/mock/city';
 import { useCommandMetrics } from '@/services/hooks';
+import { useRealtime } from '@/context/RealtimeContext';
 import { getIcon } from '@/components/ui/icons';
 
 function useClock() {
@@ -18,6 +19,7 @@ export function Header() {
   const { pathname } = useLocation();
   const now = useClock();
   const { data: metrics } = useCommandMetrics();
+  const { connectionStatus, activeClients, reconnect } = useRealtime();
 
   const current =
     NAV_ITEMS.find((n) => (n.to === '/' ? pathname === '/' : pathname.startsWith(n.to))) ??
@@ -51,6 +53,53 @@ export function Header() {
       </div>
 
       <div className="ml-auto flex items-center gap-3">
+        {/* System WebSocket Connection Status */}
+        <button
+          type="button"
+          onClick={() => {
+            if (connectionStatus === 'disconnected') {
+              reconnect();
+            }
+          }}
+          title={
+            connectionStatus === 'connected'
+              ? `Real-time WebSocket connected (${activeClients} active client${activeClients === 1 ? '' : 's'})`
+              : connectionStatus === 'connecting'
+              ? 'Attempting to establish WebSocket connection...'
+              : 'WebSocket disconnected — click to reconnect'
+          }
+          className={`flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[11px] font-medium transition-colors ${
+            connectionStatus === 'connected'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : connectionStatus === 'connecting'
+              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+              : 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 cursor-pointer'
+          }`}
+        >
+          <span className="relative flex h-2 w-2">
+            {connectionStatus === 'connected' ? (
+              <>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </>
+            ) : connectionStatus === 'connecting' ? (
+              <>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+              </>
+            ) : (
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-400" />
+            )}
+          </span>
+          <span className="capitalize">
+            {connectionStatus === 'connected'
+              ? 'Live Connected'
+              : connectionStatus === 'connecting'
+              ? 'Connecting...'
+              : 'Disconnected'}
+          </span>
+        </button>
+
         {critical > 0 ? (
           <div className="flex items-center gap-1.5 rounded-sm bg-critical-soft px-2.5 py-1.5 text-[12px] font-semibold text-critical">
             <Siren size={14} />

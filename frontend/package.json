@@ -3,12 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Nagar Nayan — AI-powered urban sensing & intelligence platform (frontend)",
+  "description": "Nagar Nayan \u2014 AI-powered urban sensing & intelligence platform (frontend)",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -25,11 +26,13 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@types/leaflet": "^1.9.15",
+    "@types/node": "^22.20.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^5.0.0"
   }
 }
