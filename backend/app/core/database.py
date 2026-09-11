@@ -43,13 +43,8 @@ def _get_engine() -> AsyncEngine | None:
     """Return the shared async engine, creating it once on first call."""
     global _engine
     if _engine is None and settings.DATABASE_URL:
-        url = settings.DATABASE_URL
-        if url.startswith("postgresql://"):
-            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        elif url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
         _engine = create_async_engine(
-            url,
+            settings.DATABASE_URL,
             echo=False,
             pool_pre_ping=True,   # verify connections before use
             pool_size=5,
@@ -115,14 +110,14 @@ async def check_db_connection() -> tuple[str, str]:
     if not settings.DATABASE_URL:
         return "not_configured", "DATABASE_URL not set"
 
-    try:
-        engine = _get_engine()
-        if engine is None:
-            return "not_configured", "Engine not initialised"
+    engine = _get_engine()
+    if engine is None:
+        return "not_configured", "Engine not initialised"
 
+    try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return "healthy", "OK"
     except Exception as exc:
         logger.warning("Database health check failed: %s", exc)
-        return "unhealthy", type(exc).__name__
+        return "unhealthy", str(exc)

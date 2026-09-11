@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -22,7 +21,7 @@ class ConnectionManager:
 
     def __init__(self, send_timeout_seconds: float = 2.0) -> None:
         self._active_connections: set[WebSocket] = set()
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
         self._send_timeout = send_timeout_seconds
 
     @property
@@ -33,7 +32,7 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket) -> None:
         """Accept connection and register client in active connections set."""
         await websocket.accept()
-        with self._lock:
+        async with self._lock:
             self._active_connections.add(websocket)
         logger.info(
             "WebSocket client connected. Total active clients: %d",
@@ -42,7 +41,7 @@ class ConnectionManager:
 
     async def disconnect(self, websocket: WebSocket) -> None:
         """Remove client from active connections set cleanly."""
-        with self._lock:
+        async with self._lock:
             self._active_connections.discard(websocket)
         logger.info(
             "WebSocket client disconnected. Total active clients: %d",
@@ -62,7 +61,7 @@ class ConnectionManager:
             logger.debug("No active WebSocket connections; broadcast skipped.")
             return
 
-        with self._lock:
+        async with self._lock:
             snapshot = list(self._active_connections)
 
         dead_connections: list[WebSocket] = []
@@ -87,7 +86,7 @@ class ConnectionManager:
                 dead_connections.append(socket)
 
         if dead_connections:
-            with self._lock:
+            async with self._lock:
                 for dead in dead_connections:
                     self._active_connections.discard(dead)
             logger.debug(

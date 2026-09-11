@@ -65,9 +65,9 @@ class TestHealthEndpoint:
 
     def test_health_no_db_configured(self, client: TestClient) -> None:
         """When DATABASE_URL is empty, overall status is still 'healthy'."""
-        from app.core.config import settings
+        import os
 
-        if settings.DATABASE_URL:
+        if os.environ.get("DATABASE_URL"):
             pytest.skip("DATABASE_URL is set — DB tests should check differently")
         response = client.get("/api/v1/health")
         body = response.json()

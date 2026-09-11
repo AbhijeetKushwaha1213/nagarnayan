@@ -26,6 +26,7 @@ class WebSocketMessageType(str, enum.Enum):
     EVENT_UPDATED = "event.updated"
     ALERT_CREATED = "alert.created"
     ALERT_UPDATED = "alert.updated"
+    SYSTEM_CONNECTED = "system.connected"
     SYSTEM_PONG = "system.pong"
 
 
@@ -83,6 +84,11 @@ def serialize_alert(alert: Alert) -> dict[str, Any]:
         "status": alert.status.value if hasattr(alert.status, "value") else str(alert.status),
         "title": alert.title,
         "message": alert.message,
+        "triggered_at": (
+            alert.triggered_at.isoformat()
+            if getattr(alert, "triggered_at", None) is not None
+            else None
+        ),
         "created_at": (
             alert.created_at.isoformat()
             if isinstance(alert.created_at, datetime)
