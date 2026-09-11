@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import uuid
 
 from sqlalchemy import select
@@ -25,6 +26,8 @@ class AlertRepository(BaseRepository[Alert]):
         severity: EventSeverity | None = None,
         event_id: uuid.UUID | None = None,
         alert_type: AlertType | None = None,
+        from_timestamp: datetime | None = None,
+        to_timestamp: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[Alert]:
@@ -38,8 +41,12 @@ class AlertRepository(BaseRepository[Alert]):
             query = query.where(Alert.event_id == event_id)
         if alert_type is not None:
             query = query.where(Alert.alert_type == alert_type)
+        if from_timestamp is not None:
+            query = query.where(Alert.triggered_at >= from_timestamp)
+        if to_timestamp is not None:
+            query = query.where(Alert.triggered_at <= to_timestamp)
 
-        query = query.order_by(Alert.created_at.desc()).offset(offset).limit(limit)
+        query = query.order_by(Alert.triggered_at.desc()).offset(offset).limit(limit)
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
@@ -49,7 +56,7 @@ class AlertRepository(BaseRepository[Alert]):
         for_update: bool = False,
     ) -> Alert | None:
         """
-        Find an existing active alert (NEW or ACKNOWLEDGED) for the specified Event.
+        Find an existing active alert (ACTIVE, NEW, or ACKNOWLEDGED) for the specified Event.
 
         Optionally applies row-level locking (FOR UPDATE) to prevent race conditions.
         """
@@ -57,7 +64,7 @@ class AlertRepository(BaseRepository[Alert]):
             select(Alert)
             .where(
                 Alert.event_id == event_id,
-                Alert.status.in_([AlertStatus.NEW, AlertStatus.ACKNOWLEDGED]),
+                Alert.status.in_([AlertStatus.ACTIVE, AlertStatus.NEW, AlertStatus.ACKNOWLEDGED]),
             )
             .options(selectinload(Alert.event))
         )

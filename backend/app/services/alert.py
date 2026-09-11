@@ -10,20 +10,31 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.alert import Alert, AlertStatus, AlertType
-from app.models.event import Event, EventSeverity, EventStatus, EventType
+from app.models.event import (
+    ACTIVE_EVENT_STATUSES,
+    Event,
+    EventSeverity,
+    EventStatus,
+    EventType,
+)
 from app.repositories.alert import AlertRepository
-from app.schemas.alert import AlertUpdate
+from app.schemas.alert import AlertManualCreate, AlertUpdate
 from app.websocket.publisher import WebSocketPublisher, publisher as default_publisher
 
 logger = logging.getLogger(__name__)
 
 # Valid state machine transitions for Alert lifecycle
 ALLOWED_LIFECYCLE_TRANSITIONS: dict[AlertStatus, set[AlertStatus]] = {
-    AlertStatus.NEW: {
+    AlertStatus.ACTIVE: {
         AlertStatus.ACKNOWLEDGED,
         AlertStatus.DISMISSED,
-        AlertStatus.RESOLVED,
+    },
+    AlertStatus.NEW: {
+        AlertStatus.ACTIVE,
+        AlertStatus.ACKNOWLEDGED,
+        AlertStatus.DISMISSED,
     },
     AlertStatus.ACKNOWLEDGED: {
         AlertStatus.RESOLVED,
@@ -39,11 +50,12 @@ ACTIONABLE_SEVERITIES: set[EventSeverity] = {
     EventSeverity.HIGH,
 }
 
-# Actionable event statuses that can trigger alerts
-ACTIONABLE_EVENT_STATUSES: set[EventStatus] = {
-    EventStatus.DETECTED,
-    EventStatus.VERIFIED,
-    EventStatus.OPEN,
+# Numerical severity ranking for escalation comparison
+SEVERITY_ORDER: dict[EventSeverity, int] = {
+    EventSeverity.LOW: 1,
+    EventSeverity.MEDIUM: 2,
+    EventSeverity.HIGH: 3,
+    EventSeverity.CRITICAL: 4,
 }
 
 
@@ -66,16 +78,59 @@ class AlertService:
         Evaluate municipal alert policy against an Event.
 
         Rules:
-          - Event severity must be CRITICAL or HIGH.
-          - Event status must be actionable (DETECTED, VERIFIED, OPEN).
+          - Event status must be actionable (DETECTED, VERIFIED, OPEN, ACKNOWLEDGED, IN_PROGRESS).
           - RESOLVED or REJECTED events never generate alerts.
-          - MEDIUM and LOW events do not automatically generate alerts.
+          - CRITICAL: immediate alert generation.
+          - HIGH: creates an alert.
+          - MEDIUM: creates an alert ONLY when meeting explicit configured supporting thresholds:
+              * supporting detection_count >= ALERT_MEDIUM_THRESHOLD_DETECTION_COUNT (default 3), OR
+              * distinct reporting buses >= ALERT_MEDIUM_THRESHOLD_DISTINCT_BUSES (default 2), OR
+              * persistence duration >= ALERT_MEDIUM_THRESHOLD_PERSISTENCE_SECONDS (default 120s).
+          - LOW: normally suppressed (does not create alert).
         """
-        if event.status not in ACTIONABLE_EVENT_STATUSES:
+        if event.status not in ACTIVE_EVENT_STATUSES:
             return False
-        if event.severity not in ACTIONABLE_SEVERITIES:
+        if event.status in (EventStatus.RESOLVED, EventStatus.REJECTED):
             return False
-        return True
+
+        # CRITICAL and HIGH qualify immediately
+        if event.severity in (EventSeverity.CRITICAL, EventSeverity.HIGH):
+            return True
+
+        # MEDIUM qualifies only when supporting evidence thresholds are met
+        if event.severity == EventSeverity.MEDIUM:
+            metadata = dict(event.extra_metadata or {})
+            detection_count = int(metadata.get("detection_count", 1))
+            reporting_buses = list(metadata.get("reporting_buses", []))
+            if "distinct_buses" in metadata:
+                distinct_bus_count = int(metadata["distinct_buses"])
+            elif reporting_buses:
+                distinct_bus_count = len(set(reporting_buses))
+            elif getattr(event, "bus_id", None):
+                distinct_bus_count = 1
+            else:
+                distinct_bus_count = 0
+            duration_seconds = 0.0
+            if event.first_detected_at and event.last_detected_at:
+                duration_seconds = max(
+                    0.0,
+                    (event.last_detected_at - event.first_detected_at).total_seconds(),
+                )
+
+            threshold_count = getattr(settings, "ALERT_MEDIUM_THRESHOLD_DETECTION_COUNT", 3)
+            threshold_buses = getattr(settings, "ALERT_MEDIUM_THRESHOLD_DISTINCT_BUSES", 2)
+            threshold_duration = getattr(settings, "ALERT_MEDIUM_THRESHOLD_PERSISTENCE_SECONDS", 120)
+
+            if (
+                detection_count >= threshold_count
+                or distinct_bus_count >= threshold_buses
+                or duration_seconds >= threshold_duration
+            ):
+                return True
+            return False
+
+        # LOW does not generate alerts
+        return False
 
     @staticmethod
     def map_event_to_alert_type(event: Event) -> AlertType:
@@ -114,11 +169,13 @@ class AlertService:
 
     async def process_event_for_alert(self, event: Event) -> Alert | None:
         """
-        Evaluate an Event and create an Alert if policy requires it and no active alert exists.
+        Evaluate an Event and create or escalate an Alert if policy requires it.
 
-        Anti-Flooding / Idempotency:
-          - If an active alert (NEW or ACKNOWLEDGED) already exists for this Event,
-            a new alert is suppressed and the existing active alert is returned.
+        Anti-Flooding / Idempotency / Escalation:
+          - If an active alert (ACTIVE, NEW, or ACKNOWLEDGED) already exists for this Event:
+            * Check for severity escalation: if Event severity is higher than active Alert severity,
+              escalate the alert's severity, title, message, and metadata.
+            * Otherwise suppress duplicate creation and return the existing active alert.
           - If previous alerts for this Event were RESOLVED or DISMISSED, and the Event
             remains or becomes actionable again, a new alert is generated.
         """
@@ -138,12 +195,34 @@ class AlertService:
         )
         if active_alert is not None:
             active_alert._is_new = False
-            logger.info(
-                "Active alert %s (%s) already exists for Event %s; suppressing duplicate alert.",
-                active_alert.id,
-                active_alert.status.value,
-                event.id,
-            )
+            active_alert._is_escalated = False
+
+            # Severity escalation: if event severity outranks active alert severity, escalate alert
+            current_alert_rank = SEVERITY_ORDER.get(active_alert.severity, 1)
+            event_rank = SEVERITY_ORDER.get(event.severity, 1)
+
+            if event_rank > current_alert_rank:
+                logger.info(
+                    "Escalating active Alert %s (%s) from %s -> %s for Event %s",
+                    active_alert.id,
+                    active_alert.status.value,
+                    active_alert.severity.value,
+                    event.severity.value,
+                    event.id,
+                )
+                active_alert.severity = event.severity
+                title, message = self.generate_alert_content(event)
+                active_alert.title = title
+                active_alert.message = message
+                active_alert.alert_type = self.map_event_to_alert_type(event)
+                meta = dict(active_alert.extra_metadata or {})
+                meta["event_severity"] = event.severity.value
+                meta["escalated_at"] = datetime.now(timezone.utc).isoformat()
+                active_alert.extra_metadata = meta
+                active_alert._is_escalated = True
+                await self.repo.update(active_alert)
+                await self._session.flush()
+
             return active_alert
 
         # Synthesize new alert
@@ -171,9 +250,10 @@ class AlertService:
             event_id=event.id,
             alert_type=alert_type,
             severity=event.severity,
-            status=AlertStatus.NEW,
+            status=AlertStatus.ACTIVE,
             title=title,
             message=message,
+            triggered_at=now,
             extra_metadata=metadata,
             created_at=now,
             updated_at=now,
@@ -184,12 +264,67 @@ class AlertService:
         new_alert._is_new = True
 
         logger.info(
-            "Synthesized Alert %s (%s, severity=%s, status=NEW) for Event %s",
+            "Synthesized Alert %s (%s, severity=%s, status=ACTIVE) for Event %s",
             new_alert.id,
             alert_type.value,
             new_alert.severity.value,
             event.id,
         )
+        return new_alert
+
+    async def create_manual_alert(self, data: AlertManualCreate) -> Alert:
+        """
+        Create a manual municipal alert via POST /api/v1/alerts.
+
+        Validates event existence and enforces active-alert deduplication.
+        """
+        from app.repositories.event import EventRepository
+
+        event_repo = EventRepository(self._session)
+        event = await event_repo.get_by_id(data.event_id)
+        if event is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Event {data.event_id} not found",
+            )
+
+        # Idempotency / deduplication check
+        existing_active = await self.repo.find_active_alert_by_event(
+            data.event_id, for_update=True
+        )
+        if existing_active is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Active alert {existing_active.id} ({existing_active.status.value}) "
+                    f"already exists for Event {data.event_id}"
+                ),
+            )
+
+        alert_type = data.alert_type or self.map_event_to_alert_type(event)
+        severity = data.severity or event.severity
+        now = datetime.now(timezone.utc)
+
+        metadata = dict(data.metadata)
+        metadata["created_by"] = "operator_manual"
+        metadata["event_type"] = event.event_type.value
+
+        new_alert = Alert(
+            id=uuid.uuid4(),
+            event_id=event.id,
+            alert_type=alert_type,
+            severity=severity,
+            status=AlertStatus.ACTIVE,
+            title=data.title,
+            message=data.message,
+            triggered_at=now,
+            created_at=now,
+            updated_at=now,
+            extra_metadata=metadata,
+        )
+        new_alert = await self.repo.create(new_alert)
+        await self._session.commit()
+        await self._session.refresh(new_alert)
         return new_alert
 
     async def get_alert(self, alert_id: uuid.UUID) -> Alert:
@@ -208,6 +343,8 @@ class AlertService:
         severity: EventSeverity | None = None,
         event_id: uuid.UUID | None = None,
         alert_type: AlertType | None = None,
+        from_timestamp: datetime | None = None,
+        to_timestamp: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[Alert]:
@@ -217,6 +354,8 @@ class AlertService:
             severity=severity,
             event_id=event_id,
             alert_type=alert_type,
+            from_timestamp=from_timestamp,
+            to_timestamp=to_timestamp,
             limit=limit,
             offset=offset,
         )
@@ -226,13 +365,13 @@ class AlertService:
         Update an Alert (lifecycle transition and/or metadata update).
 
         Validates lifecycle state transitions:
-          NEW -> ACKNOWLEDGED
+          ACTIVE / NEW -> ACKNOWLEDGED
           ACKNOWLEDGED -> RESOLVED
-          NEW -> DISMISSED
+          ACTIVE / NEW -> DISMISSED
           ACKNOWLEDGED -> DISMISSED
-          NEW -> RESOLVED
+          ACTIVE / NEW -> RESOLVED
 
-        Rejects invalid transitions (e.g. RESOLVED -> NEW).
+        Rejects invalid transitions (e.g. RESOLVED -> ACTIVE).
         """
         alert = await self.repo.get_by_id_with_event(alert_id)
         if alert is None:

@@ -21,6 +21,7 @@ from app.repositories.stream import StreamRepository
 from app.schemas.detection import DetectionCreate
 from app.services.alert import AlertService
 from app.services.event_correlation import EventCorrelationService
+from app.services.severity import SeverityService
 from app.websocket.publisher import WebSocketPublisher, publisher as default_publisher
 
 
@@ -29,6 +30,7 @@ class DetectionService:
         self,
         session: AsyncSession,
         correlation_service: EventCorrelationService | None = None,
+        severity_service: SeverityService | None = None,
         alert_service: AlertService | None = None,
         publisher: WebSocketPublisher | None = None,
     ) -> None:
@@ -41,6 +43,11 @@ class DetectionService:
             correlation_service
             if correlation_service is not None
             else EventCorrelationService(session)
+        )
+        self._severity_service = (
+            severity_service
+            if severity_service is not None
+            else SeverityService()
         )
         self._alert_service = (
             alert_service
@@ -165,6 +172,10 @@ class DetectionService:
         else:
             correlated_event = await self._event_repo.get_by_id(data.event_id)
             is_new_event = False
+
+        # Evaluate and update Event severity based on Phase 6 Severity Engine
+        if correlated_event is not None:
+            self._severity_service.evaluate_and_update_event_severity(correlated_event)
 
         # Automatic Alert synthesis when the Event requires municipal attention
         created_alert = None

@@ -43,7 +43,8 @@ class AlertType(str, enum.Enum):
 class AlertStatus(str, enum.Enum):
     """Lifecycle state of an alert."""
 
-    NEW = "NEW"
+    ACTIVE = "ACTIVE"
+    NEW = "NEW"  # Maintained as compatible alias with legacy/test fixtures
     ACKNOWLEDGED = "ACKNOWLEDGED"
     RESOLVED = "RESOLVED"
     DISMISSED = "DISMISSED"
@@ -54,12 +55,12 @@ class Alert(Base, TimestampMixin):
 
     __tablename__ = "alerts"
     __table_args__ = (
-        # Partial unique index: at most one active alert (NEW or ACKNOWLEDGED) per event
+        # Partial unique index: at most one active alert (ACTIVE, NEW or ACKNOWLEDGED) per event
         Index(
             "uq_alerts_active_event",
             "event_id",
             unique=True,
-            postgresql_where=text("status IN ('NEW', 'ACKNOWLEDGED')"),
+            postgresql_where=text("status IN ('ACTIVE', 'NEW', 'ACKNOWLEDGED')"),
         ),
     )
 
@@ -87,7 +88,7 @@ class Alert(Base, TimestampMixin):
     status: Mapped[AlertStatus] = mapped_column(
         SAEnum(AlertStatus, name="alertstatus", create_type=True),
         nullable=False,
-        default=AlertStatus.NEW,
+        default=AlertStatus.ACTIVE,
         index=True,
     )
     title: Mapped[str] = mapped_column(
@@ -97,6 +98,12 @@ class Alert(Base, TimestampMixin):
     message: Mapped[str] = mapped_column(
         String(2000),
         nullable=False,
+    )
+    triggered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
     )
     acknowledged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

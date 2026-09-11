@@ -56,6 +56,13 @@ from app.websocket.schemas import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_global_connection_manager() -> Any:
+    connection_manager._active_connections.clear()
+    yield
+    connection_manager._active_connections.clear()
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 

@@ -35,10 +35,21 @@ class AlertCreate(BaseModel):
     event_id: uuid.UUID = Field(..., description="ID of the originating Event")
     alert_type: AlertType = Field(..., description="Categorization of the alert")
     severity: EventSeverity = Field(..., description="Severity level aligned with parent Event")
-    status: AlertStatus = Field(AlertStatus.NEW, description="Initial status")
+    status: AlertStatus = Field(AlertStatus.ACTIVE, description="Initial status")
     title: str = Field(..., max_length=255, description="Deterministic human-readable alert title")
     message: str = Field(..., max_length=2000, description="Deterministic human-readable alert description")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata dictionary")
+
+
+class AlertManualCreate(BaseModel):
+    """Payload for operator-created municipal alert via POST /api/v1/alerts."""
+
+    event_id: uuid.UUID = Field(..., description="ID of the originating Event")
+    title: str = Field(..., max_length=255, description="Alert title")
+    message: str = Field(..., max_length=2000, description="Alert description")
+    alert_type: AlertType | None = Field(None, description="Optional alert type (defaults to event mapping)")
+    severity: EventSeverity | None = Field(None, description="Optional severity override (defaults to event severity)")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Custom metadata dictionary")
 
 
 class AlertUpdate(BaseModel):
@@ -60,6 +71,7 @@ class AlertResponse(BaseModel):
     status: AlertStatus
     title: str
     message: str
+    triggered_at: datetime | None = None
     acknowledged_at: datetime | None = None
     resolved_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="extra_metadata")

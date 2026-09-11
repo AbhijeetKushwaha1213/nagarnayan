@@ -6,7 +6,7 @@ All values are read from environment variables (or a .env file).
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Union
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,21 +41,28 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "nagar_nayan"
 
     # ── CORS ───────────────────────────────────────────────────────────────────
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000", "http://localhost:5173"]
 
-    @field_validator("CORS_ORIGINS", mode="before")
+    @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
     def _parse_cors_origins(cls, value: object) -> List[str]:
-        """Allow CORS_ORIGINS to be provided as a comma-separated string."""
+        """Allow CORS_ORIGINS to be provided as a comma-separated string or list."""
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
-        return value  # type: ignore[return-value]
+        if isinstance(value, (list, tuple)):
+            return [str(origin).strip() for origin in value if str(origin).strip()]
+        return []
 
     # ── Event Correlation & Deduplication ──────────────────────────────────────
     EVENT_CORRELATION_RADIUS_METERS: float = 50.0
     EVENT_CORRELATION_WINDOW_SECONDS: int = 300
     EVENT_DEDUP_RADIUS_METERS: float = 50.0
     EVENT_DEDUP_TIME_WINDOW_SECONDS: int = 300
+
+    # ── Severity & Alert Engine ────────────────────────────────────────────────
+    ALERT_MEDIUM_THRESHOLD_DETECTION_COUNT: int = 3
+    ALERT_MEDIUM_THRESHOLD_DISTINCT_BUSES: int = 2
+    ALERT_MEDIUM_THRESHOLD_PERSISTENCE_SECONDS: int = 120
 
     # ── Logging ────────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"

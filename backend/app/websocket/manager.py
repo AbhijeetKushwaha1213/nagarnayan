@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -21,7 +22,7 @@ class ConnectionManager:
 
     def __init__(self, send_timeout_seconds: float = 2.0) -> None:
         self._active_connections: set[WebSocket] = set()
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
         self._send_timeout = send_timeout_seconds
 
     @property
@@ -32,7 +33,7 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket) -> None:
         """Accept connection and register client in active connections set."""
         await websocket.accept()
-        async with self._lock:
+        with self._lock:
             self._active_connections.add(websocket)
         logger.info(
             "WebSocket client connected. Total active clients: %d",
@@ -41,7 +42,7 @@ class ConnectionManager:
 
     async def disconnect(self, websocket: WebSocket) -> None:
         """Remove client from active connections set cleanly."""
-        async with self._lock:
+        with self._lock:
             self._active_connections.discard(websocket)
         logger.info(
             "WebSocket client disconnected. Total active clients: %d",
@@ -61,7 +62,7 @@ class ConnectionManager:
             logger.debug("No active WebSocket connections; broadcast skipped.")
             return
 
-        async with self._lock:
+        with self._lock:
             snapshot = list(self._active_connections)
 
         dead_connections: list[WebSocket] = []
@@ -73,23 +74,20 @@ class ConnectionManager:
                     timeout=self._send_timeout,
                 )
             except (WebSocketDisconnect, RuntimeError) as exc:
-                logger.debug("Client disconnected during broadcast: %s", exc)
+                logger.warning("Dead WebSocket client detected during broadcast: %s", exc)
                 dead_connections.append(socket)
             except asyncio.TimeoutError:
                 logger.warning(
-                    "WebSocket send timed out (%.1fs) for client. Marking as dead.",
+                    "WebSocket broadcast to client timed out after %.1fs; dropping slow client.",
                     self._send_timeout,
                 )
                 dead_connections.append(socket)
             except Exception as exc:
-                logger.warning(
-                    "Unexpected error broadcasting to WebSocket client: %s. Removing.",
-                    exc,
-                )
+                logger.error("Unexpected error delivering WebSocket message: %s", exc)
                 dead_connections.append(socket)
 
         if dead_connections:
-            async with self._lock:
+            with self._lock:
                 for dead in dead_connections:
                     self._active_connections.discard(dead)
             logger.debug(
