@@ -1,10 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Nagar Nayan Backend — Python Dependencies
 #
-# NOTE on Python 3.14+:
-#   pydantic-core ships pre-built wheels for Python 3.14. asyncpg does not
-#   yet have 3.14 wheels, so it is excluded here and will be added in Phase 2
-#   once pre-built wheels are available (or the project pins Python ≤3.12).
+# NOTE on Python 3.14:
+#   asyncpg and psycopg2-binary require compilation on Python 3.14.
+#   Inside Docker (Python 3.11) they install from pre-built wheels instantly.
+#   For local development without Docker, DB-touching tests are skipped.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Web framework & server
@@ -15,13 +15,16 @@ uvicorn[standard]>=0.32.0,<0.34
 pydantic>=2.10.0,<3
 pydantic-settings>=2.6.0,<3
 
-# Database ORM + migrations (wired in Phase 2)
+# Database ORM + migrations
 sqlalchemy>=2.0.0,<3
 alembic>=1.14.0,<2
+geoalchemy2>=0.14.0
 
-# PostgreSQL async driver — Phase 2
-# asyncpg>=0.30.0   # Uncomment when PostgreSQL is added (requires py<3.14 or
-#                   # wait for asyncpg 3.14-compatible wheels)
+# PostgreSQL async driver (used by the app at runtime)
+asyncpg>=0.29.0
+
+# PostgreSQL sync driver (used by Alembic migration runner only)
+psycopg2-binary>=2.9.0
 
 # Testing
 pytest>=8.3.0,<9
@@ -30,4 +33,4 @@ httpx>=0.28.0,<1        # required by FastAPI TestClient
 anyio>=4.7.0,<5
 
 # Development
-python-dotenv>=1.0.0,<2  # loads .env for local development
+python-dotenv>=1.0.0,<2

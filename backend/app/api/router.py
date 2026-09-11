@@ -10,10 +10,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.routes import health
+from app.api.routes import alerts, buses, cameras, detections, events, health, streams, ws
 
 api_router = APIRouter(prefix="/api/v1")
 
 # ── Registered route modules ────────────────────────────────────────────────
-# Each feature area gets its own router added here as the project grows.
 api_router.include_router(health.router)
+api_router.include_router(buses.router)
+api_router.include_router(cameras.router)
+api_router.include_router(streams.router)
+api_router.include_router(detections.router)
+api_router.include_router(events.router)
+api_router.include_router(alerts.router)
+api_router.include_router(ws.router)

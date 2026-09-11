@@ -1,13 +1,14 @@
 """
-Alembic environment configuration.
+Alembic environment configuration — Phase 2.
 
-Phase 1: Migration environment is set up but the database connection is not
-active yet. DATABASE_URL will be wired in Phase 2 when PostgreSQL is added.
+Uses the synchronous psycopg2 driver for migrations (Alembic doesn't support
+async natively). The app itself uses asyncpg at runtime.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from logging.config import fileConfig
 
 from alembic import context
@@ -19,26 +20,44 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# ── Target metadata ───────────────────────────────────────────────────────────
-# Import your SQLAlchemy Base here in Phase 2:
-#   from app.models import Base
-#   target_metadata = Base.metadata
-target_metadata = None  # Phase 2: replace with Base.metadata
+# ── Import models so metadata is populated ────────────────────────────────────
+# This is the critical import — it causes every model module to execute,
+# registering all tables on Base.metadata.
+import app.models  # noqa: F401, E402
+from app.core.database import Base  # noqa: E402
+
+target_metadata = Base.metadata
 
 
-def _get_database_url() -> str:
-    """Resolve DATABASE_URL from env, falling back to alembic.ini."""
-    return os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url", ""))
+# ── URL helpers ───────────────────────────────────────────────────────────────
 
+def _get_sync_url() -> str:
+    """
+    Get a synchronous (psycopg2) database URL for Alembic.
+
+    Converts the async asyncpg URL to a sync psycopg2 URL.
+    Falls back to the alembic.ini sqlalchemy.url if DATABASE_URL is not set.
+    """
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        url = config.get_main_option("sqlalchemy.url", "")
+
+    # Replace async driver scheme with sync driver scheme
+    url = re.sub(r"^postgresql\+asyncpg://", "postgresql+psycopg2://", url)
+    return url
+
+
+# ── Migration runners ─────────────────────────────────────────────────────────
 
 def run_migrations_offline() -> None:
-    """Run migrations without a live DB connection (SQL script generation)."""
-    url = _get_database_url()
+    """Run migrations without a live DB connection (generates SQL script)."""
+    url = _get_sync_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -47,7 +66,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations against a live database connection."""
     cfg = config.get_section(config.config_ini_section) or {}
-    cfg["sqlalchemy.url"] = _get_database_url()
+    cfg["sqlalchemy.url"] = _get_sync_url()
 
     connectable = engine_from_config(
         cfg,
@@ -56,7 +75,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+        )
         with context.begin_transaction():
             context.run_migrations()
 

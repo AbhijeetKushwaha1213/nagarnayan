@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  ai-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nagarnayan-ai-service
+    restart: unless-stopped
+    environment:
+      # Use mediamtx if inside Docker network, or host.docker.internal if running on host
+      RTSP_STREAM_URL: "${RTSP_STREAM_URL:-rtsp://host.docker.internal:8554/bus/front}"
+      FRAME_SAMPLE_FPS: "${FRAME_SAMPLE_FPS:-5.0}"
+      RECONNECT_DELAY_SECONDS: "${RECONNECT_DELAY_SECONDS:-5.0}"
+      STREAM_TIMEOUT_SECONDS: "${STREAM_TIMEOUT_SECONDS:-10.0}"
+      STATUS_LOG_INTERVAL_SECONDS: "${STATUS_LOG_INTERVAL_SECONDS:-5.0}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

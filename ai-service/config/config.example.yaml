@@ -1,0 +1,54 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nagar Nayan — AI Video Intelligence Service Configuration
+# Phase 4: Validated Detection → Backend Ingestion
+# ─────────────────────────────────────────────────────────────────────────────
+
+# RTSP Stream Source (from Video Stream Server / MediaMTX)
+rtsp_url: "rtsp://localhost:8554/bus/front"
+
+# Physical Hardware and Sensing Identity
+# IMPORTANT: These example UUIDs must correspond to actual records existing
+# in the backend database. The AI service does NOT create backend records automatically.
+bus_id: "00000000-0000-0000-0000-000000000001"
+camera_id: "00000000-0000-0000-0000-000000000001"
+stream_id: "00000000-0000-0000-0000-000000000001"
+
+# Frame Sampling Rate (Target processing FPS from high-framerate stream)
+frame_sample_fps: 5.0
+
+# Reconnection & Resilience Settings
+reconnect_delay_seconds: 5.0
+max_reconnect_attempts: 10
+stream_timeout_seconds: 10.0
+
+# YOLO Object Detection Model & Inference
+yolo_model: "yolov8n.pt"
+yolo_confidence_threshold: 0.25
+yolo_iou_threshold: 0.45
+yolo_device: "cpu"
+yolo_image_size: 640
+
+# Object Tracking (Phase 3)
+tracking_enabled: true
+tracker_type: "bytetrack.yaml"
+tracking_iou_threshold: 0.50
+track_max_age: 30
+
+# Multi-Frame Temporal Validation (Phase 3)
+validation_min_frames: 3
+validation_window_frames: 5
+validation_min_confidence: 0.30
+
+# Backend Integration (Phase 4)
+# Configured for Nagar Nayan FastAPI backend running on port 8080
+backend_base_url: "http://localhost:8080"
+backend_api_prefix: "/api/v1"
+backend_request_timeout_seconds: 5.0
+backend_max_retries: 3
+backend_retry_delay_seconds: 1.0
+backend_queue_max_size: 100
+backend_duplicate_cooldown_seconds: 10.0
+
+# Diagnostics & Logging
+status_log_interval_seconds: 5.0
+log_level: "INFO"

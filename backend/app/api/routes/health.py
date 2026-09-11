@@ -1,8 +1,7 @@
 """
 Health check route — GET /api/v1/health
 
-Returns a simple liveness response indicating the service is running.
-No database probe in Phase 1; that will be added when PostgreSQL is wired in.
+Returns application and database health status.
 """
 
 from __future__ import annotations
@@ -12,16 +11,24 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.database import check_db_connection
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
 
+class DatabaseHealth(BaseModel):
+    status: str  # healthy | unhealthy | not_configured
+    detail: str
+
+
 class HealthResponse(BaseModel):
     """Schema for the health-check response."""
 
-    status: str
+    status: str       # healthy | degraded
     service: str
+    database: DatabaseHealth
 
 
 @router.get(
@@ -29,11 +36,25 @@ class HealthResponse(BaseModel):
     response_model=HealthResponse,
     summary="Service health check",
     description=(
-        "Returns the current liveness status of the Nagar Nayan backend. "
-        "A future version will also probe the database connection."
+        "Returns liveness and database connectivity status. "
+        "Overall status is 'healthy' when the database is reachable, "
+        "'degraded' if the database is configured but unreachable."
     ),
 )
 async def health_check() -> HealthResponse:
-    """Liveness probe — confirms the application is running and reachable."""
+    """Probe application and database health."""
     logger.debug("Health check requested")
-    return HealthResponse(status="healthy", service="nagar-nayan-backend")
+
+    db_status, db_detail = await check_db_connection()
+
+    # Determine overall status
+    if db_status == "unhealthy":
+        overall = "degraded"
+    else:
+        overall = "healthy"
+
+    return HealthResponse(
+        status=overall,
+        service="nagar-nayan-backend",
+        database=DatabaseHealth(status=db_status, detail=db_detail),
+    )

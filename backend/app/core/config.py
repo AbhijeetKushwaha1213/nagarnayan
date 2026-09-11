@@ -2,8 +2,6 @@
 Application configuration via Pydantic Settings.
 
 All values are read from environment variables (or a .env file).
-No database connection is established here — DATABASE_URL is declared
-but intentionally unused until the database phase.
 """
 
 from __future__ import annotations
@@ -28,11 +26,19 @@ class Settings(BaseSettings):
     APP_NAME: str = "Nagar Nayan Backend"
     APP_ENV: str = "development"         # development | staging | production
     APP_HOST: str = "0.0.0.0"
-    APP_PORT: int = 8000
-    APP_VERSION: str = "0.1.0"
+    APP_PORT: int = 8080
+    APP_VERSION: str = "0.2.0"
 
-    # ── Database (declared for future integration — not used in Phase 1) ───────
-    DATABASE_URL: str = ""               # e.g. postgresql+asyncpg://user:pass@host/db
+    # ── Database ───────────────────────────────────────────────────────────────
+    # Full async DSN used by the application (asyncpg driver).
+    # e.g. postgresql+asyncpg://user:pass@host:5432/dbname
+    DATABASE_URL: str = ""
+
+    # Individual credentials — used by docker-compose; the app always reads
+    # the assembled DATABASE_URL above.
+    POSTGRES_USER: str = "nagarnayan"
+    POSTGRES_PASSWORD: str = "secret"
+    POSTGRES_DB: str = "nagar_nayan"
 
     # ── CORS ───────────────────────────────────────────────────────────────────
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
@@ -44,6 +50,12 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value  # type: ignore[return-value]
+
+    # ── Event Correlation & Deduplication ──────────────────────────────────────
+    EVENT_CORRELATION_RADIUS_METERS: float = 50.0
+    EVENT_CORRELATION_WINDOW_SECONDS: int = 300
+    EVENT_DEDUP_RADIUS_METERS: float = 50.0
+    EVENT_DEDUP_TIME_WINDOW_SECONDS: int = 300
 
     # ── Logging ────────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"

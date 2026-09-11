@@ -1,0 +1,32 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+env/
+venv/
+ENV/
+
+# Configuration & secrets
+.env
+.env.local
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Debug and data files
+debug_frames/
+*.jpg
+*.png
+*.mp4
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
